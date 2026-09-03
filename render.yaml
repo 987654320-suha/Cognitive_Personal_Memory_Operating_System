@@ -20,7 +20,7 @@ services:
       - key: DEBUG
         value: "false"
       - key: EMBEDDING_MODEL
-        value: all-mpnet-base-v2
+        value: all-MiniLM-L6-v2
       - key: OLLAMA_MODEL
         value: phi3:mini
       - key: OLLAMA_URL

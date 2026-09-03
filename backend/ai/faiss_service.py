@@ -1,4 +1,4 @@
-﻿# ðŸ“ LOCATION: backend/ai/faiss_service.py
+# ðŸ“ LOCATION: backend/ai/faiss_service.py
 """
 faiss_service.py  â€” ACCURACY FIX v2
 =====================================
@@ -82,6 +82,9 @@ def faiss_search(query: str, top_k: int = 30) -> list[dict]:
     q_emb = np.array([q_vec], dtype=np.float32)
 
     if FAISS_AVAILABLE:
+        if hasattr(_index, "d") and q_emb.shape[1] != _index.d:
+            print(f"[FAISS] Dimension mismatch: query vector ({q_emb.shape[1]}-dim) != index ({_index.d}-dim). Re-index memories or run update_embeddings.py.")
+            return []
         faiss.normalize_L2(q_emb)
         k = min(top_k, len(_indexed_memories))
         scores, indices = _index.search(q_emb, k)

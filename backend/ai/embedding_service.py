@@ -21,7 +21,8 @@ from typing import List, Optional
 
 _model = None
 _model_lock = Lock()
-MODEL_NAME = os.getenv("EMBEDDING_MODEL", "all-mpnet-base-v2")   # 768-dim, significantly better than MiniLM
+# Default to all-MiniLM-L6-v2 (384-dim, ~80 MB) to fit comfortably within Render's 512 MiB limit
+MODEL_NAME = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
 # Query synonym expansion â€” improves recall for short/ambiguous queries
 QUERY_EXPANSIONS: dict[str, list[str]] = {
@@ -47,22 +48,25 @@ def _load_model() -> Optional[object]:
     try:
         from sentence_transformers import SentenceTransformer
         model = SentenceTransformer(MODEL_NAME, device="cpu")
-        print(f"[Embedding] Model loaded: {MODEL_NAME} (768-dim, high accuracy)")
+        dim = getattr(model, "get_sentence_embedding_dimension", lambda: "unknown")()
+        print(f"[Embedding] Model loaded on-demand: {MODEL_NAME} ({dim}-dim, CPU-optimized)")
         return model
     except ImportError:
         print("[Embedding] sentence-transformers not installed. Run: pip install sentence-transformers")
         return None
     except Exception as e:
         print(f"[Embedding] Failed to load {MODEL_NAME}: {e}")
-        # Fallback to MiniLM if mpnet unavailable
-        try:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
-            print(f"[Embedding] Fallback model loaded: all-MiniLM-L6-v2 (384-dim)")
-            return model
-        except Exception as fallback_error:
-            print(f"[Embedding] Could not load any model: {fallback_error}")
-            return None
+        if MODEL_NAME != "all-MiniLM-L6-v2":
+            # Fallback to lightweight MiniLM if primary model fails/OOMs
+            try:
+                from sentence_transformers import SentenceTransformer
+                model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+                print(f"[Embedding] Fallback model loaded: all-MiniLM-L6-v2 (384-dim, low-memory)")
+                return model
+            except Exception as fallback_error:
+                print(f"[Embedding] Could not load fallback model: {fallback_error}")
+                return None
+        return None
 
 
 def _get_model() -> Optional[object]:
@@ -149,9 +153,9 @@ def get_query_embedding(query: str) -> List[float]:
 
 def preload_model():
     """
-    Called during FastAPI startup.
-    Loads the embedding model once so the first search is instant.
+    Legacy startup hook — now a safe no-op.
+    Models are strictly lazy-loaded on first embedding request to prevent OOM on memory-constrained servers.
     """
-    _get_model()
+    pass
 
 

@@ -112,13 +112,9 @@ for router in [
 # ── Startup tasks ─────────────────────────────────────────────────────────────
 @app.on_event("startup")
 def startup():
-    # Preload the embedding model to avoid lazy loading delays
-    try:
-        from ai.embedding_service import preload_model
-        preload_model()
-        print("[CogniSphere] Embedding model preloaded successfully.")
-    except Exception as e:
-        print(f"[CogniSphere] Embedding model preload warning: {e}")
+    # AI models (embeddings, YOLO) are strictly lazy-loaded on first request
+    # to maintain minimal startup memory footprint (<100 MiB) on constrained environments (Render Free tier).
+    print("[CogniSphere] AI models configured for on-demand lazy loading.")
 
     # Create database tables (handles new tables like memory_history)
     Base.metadata.create_all(bind=engine)
