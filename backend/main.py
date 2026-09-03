@@ -175,6 +175,17 @@ def root():
 def health():
     return {"status": "healthy"}
 
+@app.get("/recent", tags=["timeline"])
+def recent_alias(limit: int = 20):
+    """Direct alias for /timeline/recent endpoint."""
+    from database.database import SessionLocal
+    from app.routes.timeline_routes import recent_memories
+    db = SessionLocal()
+    try:
+        return recent_memories(limit=limit, db=db)
+    finally:
+        db.close()
+
 
 # ── SQLite column migrations ──────────────────────────────────────────────────
 def _run_sqlite_migrations():

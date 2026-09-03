@@ -4,7 +4,7 @@ import { useQuery } from "react-query";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getStats, getRecent, checkHealth } from "@/services/api";
+import { getStats, getRecent, checkHealth, API_BASE_URL } from "@/services/api";
 import { smartTitle, relativeDate, fileTypeIcon } from "@/utils/helpers";
 import SearchBar from "@/components/Search/SearchBar";
 import {
@@ -16,7 +16,18 @@ export default function Dashboard() {
   const router = useRouter();
   const { data: stats  } = useQuery("stats",  getStats,         { refetchInterval: 30000 });
   const { data: recent } = useQuery("recent", () => getRecent(8));
-  const { data: health } = useQuery("health", checkHealth,       { retry: false, refetchInterval: 15000 });
+  const { data: health, isSuccess } = useQuery("health", async () => {
+    console.log("[CogniSphere] API URL:", API_BASE_URL);
+    console.log("[CogniSphere] Health URL:", `${API_BASE_URL}/health`);
+    try {
+      const res = await checkHealth();
+      console.log("[CogniSphere] Health response:", res);
+      return res;
+    } catch (err) {
+      console.error("[CogniSphere] Health check failed:", err);
+      throw err;
+    }
+  }, { retry: 1, refetchInterval: 15000 });
 
   const handleSearch = (q: string, mode: string) => {
     router.push(`/search?q=${encodeURIComponent(q)}&mode=${mode}`);
@@ -29,7 +40,7 @@ export default function Dashboard() {
     { label:"Avg Quality",   value:stats ? `${((stats.acma?.avg_importance_score || 0)*100).toFixed(0)}%` : "–", icon:TrendingUp, color:"text-purple-400" },
   ];
 
-  const isConnected = !!health;
+  const isConnected = !!health || isSuccess;
 
   return (
     <div className="p-6 max-w-4xl mx-auto">

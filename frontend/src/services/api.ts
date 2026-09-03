@@ -1,12 +1,20 @@
 // 📁 LOCATION: frontend/src/services/api.ts
 import axios from "axios";
 
-const rawBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-export const API_BASE_URL = (
-  rawBase.startsWith("http://") || rawBase.startsWith("https://")
-    ? rawBase
-    : (rawBase.startsWith("localhost") || rawBase.startsWith("127.0.0.1") ? `http://${rawBase}` : `https://${rawBase}`)
-).replace(/\/+$/, "");
+let rawBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").trim();
+
+// Normalize Render internal service name or missing FQDN (e.g. "cognisphere-backend-ya2y" -> "https://cognisphere-backend-ya2y.onrender.com")
+if (!rawBase.includes(".") && !rawBase.startsWith("localhost") && !rawBase.startsWith("127.0.0.1") && !rawBase.includes(":")) {
+  rawBase = `${rawBase}.onrender.com`;
+}
+
+if (!rawBase.startsWith("http://") && !rawBase.startsWith("https://")) {
+  rawBase = (rawBase.startsWith("localhost") || rawBase.startsWith("127.0.0.1"))
+    ? `http://${rawBase}`
+    : `https://${rawBase}`;
+}
+
+export const API_BASE_URL = rawBase.replace(/\/+$/, "");
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
