@@ -46,7 +46,7 @@ def _load_model() -> Optional[object]:
     """
     try:
         from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer(MODEL_NAME)
+        model = SentenceTransformer(MODEL_NAME, device="cpu")
         print(f"[Embedding] Model loaded: {MODEL_NAME} (768-dim, high accuracy)")
         return model
     except ImportError:
@@ -57,7 +57,7 @@ def _load_model() -> Optional[object]:
         # Fallback to MiniLM if mpnet unavailable
         try:
             from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer("all-MiniLM-L6-v2")
+            model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
             print(f"[Embedding] Fallback model loaded: all-MiniLM-L6-v2 (384-dim)")
             return model
         except Exception as fallback_error:

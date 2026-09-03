@@ -34,7 +34,7 @@ def detect_objects(image_path: str, confidence: float = 0.4) -> list[str]:
     if model is None:
         return []
     try:
-        results = model(image_path, conf=confidence, verbose=False)
+        results = model(image_path, conf=confidence, verbose=False, device="cpu")
         names = []
         for result in results:
             for cls_id in result.boxes.cls.tolist():

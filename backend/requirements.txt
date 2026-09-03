@@ -1,5 +1,6 @@
 # CogniSphere v2.0 — Backend Dependencies (CPU-Only)
---extra-index-url https://download.pytorch.org/whl/cpu
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
 
 # Core
 fastapi==0.111.0
