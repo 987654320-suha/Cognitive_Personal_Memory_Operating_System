@@ -1,0 +1,212 @@
+# LOCATION: backend/main.py
+"""
+main.py — CogniSphere FastAPI Application Entry Point
+====================================================
+Registers all routers, middleware, and startup tasks.
+Production-ready for local and Render deployments.
+"""
+
+import os
+from pathlib import Path
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from database.database import engine, Base, DATABASE_URL, is_sqlite
+
+from app.models.memory         import Memory
+from app.models.goal           import Goal
+from app.models.goal_memory    import GoalMemory
+from app.models.relationship   import MemoryRelationship
+from app.models.decay_state    import DecayState
+from app.models.memory_history import MemoryHistory
+
+from app.services.chat_history import ChatHistory
+from app.middleware.logging_middleware import LoggingMiddleware
+
+# ── Import all routers ────────────────────────────────────────────────────────
+from app.routes.memory_routes         import router as memory_router
+from app.routes.search_routes         import router as search_router
+from app.routes.upload_routes         import router as upload_router
+from app.routes.chat_routes           import router as chat_router
+from app.routes.goal_routes           import router as goal_router
+from app.routes.stats_routes          import router as stats_router
+from app.routes.timeline_routes       import router as timeline_router
+from app.routes.pdf_routes            import router as pdf_router
+from app.routes.memory_details_routes import router as memory_details_router
+from app.routes.index_routes          import router as index_router
+from app.routes.watcher_routes        import router as watcher_router
+from app.routes.import_routes         import router as import_router
+from app.routes.graph_routes          import router as graph_router
+from app.routes.contradiction_routes  import router as contradiction_router
+from app.routes.trajectory_routes     import router as trajectory_router
+from app.routes.decay_routes          import router as decay_router
+from app.routes.memory_update_routes  import router as memory_update_router
+from app.routes.experiment_routes     import router as experiment_router
+
+
+# ── App setup ─────────────────────────────────────────────────────────────────
+app = FastAPI(
+    title="CogniSphere — AI Personal Cognitive Memory OS",
+    version="2.0.0",
+    description="ACMA + GAMA powered semantic memory engine",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# ── Dynamic CORS Configuration ────────────────────────────────────────────────
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+]
+
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    for u in frontend_url.split(","):
+        u = u.strip()
+        if u and u not in allowed_origins:
+            allowed_origins.append(u)
+
+cors_origins_env = os.getenv("CORS_ORIGINS")
+if cors_origins_env:
+    for u in cors_origins_env.split(","):
+        u = u.strip()
+        if u and u not in allowed_origins:
+            allowed_origins.append(u)
+
+# Middleware
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Static uploads directory
+uploads_dir_name = os.getenv("UPLOAD_DIR", "uploads")
+uploads_dir = Path(uploads_dir_name)
+uploads_dir.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir_name), name="uploads")
+
+# ── Register all routers ──────────────────────────────────────────────────────
+for router in [
+    memory_router, search_router, upload_router, chat_router,
+    goal_router, stats_router, timeline_router, pdf_router,
+    memory_details_router, index_router, watcher_router,
+    import_router, graph_router, contradiction_router,
+    trajectory_router, decay_router,
+    memory_update_router, experiment_router,
+]:
+    app.include_router(router)
+
+# ── Startup tasks ─────────────────────────────────────────────────────────────
+@app.on_event("startup")
+def startup():
+    # Preload the embedding model to avoid lazy loading delays
+    try:
+        from ai.embedding_service import preload_model
+        preload_model()
+        print("[CogniSphere] Embedding model preloaded successfully.")
+    except Exception as e:
+        print(f"[CogniSphere] Embedding model preload warning: {e}")
+
+    # Create database tables (handles new tables like memory_history)
+    Base.metadata.create_all(bind=engine)
+    print("[CogniSphere] Database tables verified.")
+
+    # Lightweight SQLite migration for new columns (only if using SQLite)
+    if is_sqlite:
+        _run_sqlite_migrations()
+        print("[CogniSphere] SQLite migrations checked.")
+
+    # Load memory cache and build FAISS index
+    try:
+        from app.services.database_service import (
+            load_memory_cache,
+            get_all_memories,
+        )
+        from ai.faiss_service import build_index
+        
+        # Load all memories into RAM cache first
+        load_memory_cache()
+        print("[CogniSphere] Memory cache loaded.")
+        
+        # Then build FAISS index from cached memories
+        memories = get_all_memories()
+        if memories:
+            build_index(memories)
+            print(f"[CogniSphere] FAISS index built: {len(memories)} memories.")
+            
+            # Build BM25 index for keyword search
+            from ai.hybrid_search import build_bm25
+            build_bm25(memories)
+            print(f"[CogniSphere] BM25 index built: {len(memories)} memories.")
+        else:
+            print("[CogniSphere] No memories yet.")
+    except Exception as e:
+        print(f"[CogniSphere] Cache/FAISS startup error: {e}")
+
+    # Start folder watcher in background (silently skips if folders absent)
+    try:
+        from app.services.folder_watcher import start_watcher_thread
+        start_watcher_thread()
+    except Exception as e:
+        print(f"[CogniSphere] Watcher startup error: {e}")
+
+
+@app.get("/")
+def root():
+    return {
+        "status":  "ok",
+        "system":  "CogniSphere v2.0",
+        "engine":  "ACMA + GAMA",
+        "docs":    "/docs",
+    }
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+
+# ── SQLite column migrations ──────────────────────────────────────────────────
+def _run_sqlite_migrations():
+    """
+    Lightweight ALTER TABLE migrations for SQLite.
+    Adds new columns to existing tables without Alembic.
+    Safe to call multiple times — silently ignores duplicate-column errors.
+    """
+    import sqlite3
+    db_clean = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
+    db_path = db_clean if db_clean else "reality_search.db"
+    try:
+        conn = sqlite3.connect(db_path)
+        cur  = conn.cursor()
+
+        # Add version column to memories
+        try:
+            cur.execute("ALTER TABLE memories ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+            print("[Migration] Added 'version' column to memories.")
+        except (sqlite3.OperationalError, Exception):
+            pass  # Column already exists
+
+        # Add parent_id column to memories
+        try:
+            cur.execute("ALTER TABLE memories ADD COLUMN parent_id INTEGER")
+            print("[Migration] Added 'parent_id' column to memories.")
+        except (sqlite3.OperationalError, Exception):
+            pass  # Column already exists
+
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[Migration] SQLite migration notice: {e}")

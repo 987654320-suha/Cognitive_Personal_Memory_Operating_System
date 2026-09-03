@@ -1,0 +1,53 @@
+# Render Blueprint Specification
+# Documentation: https://render.com/docs/blueprint-spec
+
+services:
+  # ── Backend Web Service ───────────────────────────────────────────────────────
+  - type: web
+    name: cognisphere-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.11
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: EMBEDDING_MODEL
+        value: all-mpnet-base-v2
+      - key: OLLAMA_MODEL
+        value: phi3:mini
+      - key: OLLAMA_URL
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+  # ── Frontend Web Service (Next.js) ──────────────────────────────────────────
+  - type: web
+    name: cognisphere-frontend
+    runtime: node
+    rootDir: frontend
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm run start -- -p $PORT
+    envVars:
+      - key: NODE_VERSION
+        value: 18.20.0
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: cognisphere-backend
+          property: host

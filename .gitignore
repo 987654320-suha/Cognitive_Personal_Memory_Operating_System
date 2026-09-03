@@ -1,0 +1,41 @@
+# Environments and dependencies
+.venv/
+venv/
+env/
+node_modules/
+.next/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables & secrets (NEVER commit secrets)
+.env
+.env.*
+.env.local
+!.env.example
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads and static media
+uploads/
+backend/uploads.zip
+
+# Research experiments & raw result artifacts
+backend/research_results/
+backend/research_experiment_*.py
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+frontend/.next/
+frontend/node_modules/
+backend/.venv/

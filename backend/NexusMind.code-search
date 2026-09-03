@@ -1,0 +1,209 @@
+# Query: NexusMind
+# ContextLines: 1
+
+46 results - 28 files
+
+backend\create_db.py:
+  2  """
+  3: create_db.py — Creates all NexusMind tables.
+  4  Safe to re-run. Tables: memories, goals, goal_memories, chat_history
+
+backend\main.py:
+    2  """
+    3: main.py — NexusMind FastAPI Application Entry Point
+    4  ====================================================
+
+   42  app = FastAPI(
+   43:     title="NexusMind — AI Personal Cognitive Memory OS",
+   44      version="2.0.0",
+
+   78      Base.metadata.create_all(bind=engine)
+   79:     print("[NexusMind] Database tables verified.")
+   80  
+
+   86              build_index(memories)
+   87:             print(f"[NexusMind] FAISS index built: {len(memories)} memories.")
+   88          else:
+   89:             print("[NexusMind] No memories yet.")
+   90      except Exception as e:
+   91:         print(f"[NexusMind] FAISS startup error: {e}")
+   92  
+
+   97      except Exception as e:
+   98:         print(f"[NexusMind] Watcher startup error: {e}")
+   99  
+
+  104          "status":  "ok",
+  105:         "system":  "NexusMind v2.0",
+  106          "engine":  "ACMA + GAMA",
+
+backend\README.md:
+  1: # NexusMind v2.0 — Upgrade Guide
+  2  
+
+backend\requirements.txt:
+  1: # NexusMind v2.0 — Backend Dependencies
+  2  
+
+backend\ai\acma_engine.py:
+  3  ================================================
+  4: NexusMind's core retrieval algorithm. Patent-differentiated from
+  5  standard vector search by computing a multi-factor activation score
+
+backend\ai\chat_service.py:
+   3  ==================
+   4: RAG pipeline over NexusMind memories.
+   5  Uses ACMA-ranked memories as context for Ollama Llama 3.
+
+  21  SYSTEM_PROMPT = """
+  22: You are NexusMind, a personal AI assistant with access to the user's private memory database.
+  23  Answer the user's question using ONLY the provided memory context.
+
+backend\ai\explainability_engine.py:
+  13  This is the XAI (Explainable AI) layer — a core patent contribution.
+  14: Every answer NexusMind gives can be fully audited by the user.
+  15  """
+
+backend\ai\memory_pipeline.py:
+  3  ==================
+  4: Central ingestion pipeline for NexusMind.
+  5  Every new file — whether from the folder watcher or the upload API —
+
+backend\app\middleware\logging_middleware.py:
+  15  
+  16: logger = logging.getLogger("nexusmind")
+  17  logging.basicConfig(
+
+backend\app\routes\index_routes.py:
+  64      """
+  65:     Returns files on disk that haven't been ingested into NexusMind yet.
+  66      Scans Desktop, Downloads, Documents, Pictures.
+
+backend\app\services\auto_importer.py:
+    5  One-time bulk importer: scans a folder and ingests every supported
+    6: file through the NexusMind memory pipeline.
+    7  
+    8  Use case: first-time setup when you want to import your existing
+    9: Desktop / Documents / Pictures into NexusMind all at once.
+   10  
+
+   99  if __name__ == "__main__":
+  100:     parser = argparse.ArgumentParser(description="Bulk import files into NexusMind")
+  101      parser.add_argument("--dir",       required=True, help="Directory to import")
+
+backend\app\services\folder_indexer.py:
+  104      """
+  105:     Returns files on disk that are NOT yet in the NexusMind database.
+  106      Compares by filename (source field in DB).
+
+backend\app\services\folder_watcher.py:
+   4  Watches Desktop, Downloads, Documents, Pictures for new files.
+   5: On detection, runs the full NexusMind memory pipeline.
+   6  Uses watchdog. Run as background thread from main.py or standalone.
+
+  38  
+  39: class NexusMindEventHandler(FileSystemEventHandler if WATCHDOG_AVAILABLE else object):
+  40      def __init__(self):
+
+  73  
+  74:     handler = NexusMindEventHandler()
+  75      observer = Observer()
+
+backend\app\services\stats_service.py:
+  4  ================
+  5: Computes system-wide statistics for the NexusMind dashboard.
+  6  Covers memories, goals, file types, embeddings, and ACMA quality.
+
+backend\scripts\benchmark.py:
+  59  
+  60:     print("\n══ NexusMind Retrieval Benchmark ══════════════════════════")
+  61      print(f"Top-K: {top_k} | Queries: {len(GROUND_TRUTH)}")
+
+frontend\package-lock.json:
+  1  {
+  2:   "name": "nexusmind-frontend",
+  3    "version": "2.0.0",
+
+  7      "": {
+  8:       "name": "nexusmind-frontend",
+  9        "version": "2.0.0",
+
+frontend\package.json:
+  1  {
+  2:   "name": "nexusmind-frontend",
+  3    "version": "2.0.0",
+
+frontend\.next\server\app\page.js:
+  315  "use strict";
+  316: ⟪ 8141 characters skipped ⟫_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"h1\", {\n                                        className: \"text-2xl font-bold text-white\",\n                                        children: \"NexusMind\"\n                                    }, void 0, false, {\n                                        fileName: \"E:\\\\Cognitive_Personal_Memory_Operating_System\\\\frontend\\\\src\\\\app\\\\page.tsx\",\n                                        lineNumber: 37,\n                                        columnNumber: 13\n                                    }, this),\n                                    /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"p\", {\n                                        className: \"text-sm text-gray-400\",\n                                        children: \"Your personal cognitive memory OS\"\n                                    }, void 0, false, {\n                                        fileName: \"E:\\\\Cognitive_Personal_Memory_Operating_System\\\\frontend\\\\src\\\\app\\\\page.tsx\",\n                                        lineNumber: 38,\n                                        columnNumber: 13\n                    
+  317  
+
+  326  "use strict";
+  327: ⟪ 12871 characters skipped ⟫                            opacity: 0\n                            },\n                            className: \"font-bold text-white text-sm tracking-wide\",\n                            children: \"NexusMind\"\n                        }, void 0, false, {\n                            fileName: \"E:\\\\Cognitive_Personal_Memory_Operating_System\\\\frontend\\\\src\\\\components\\\\Layout\\\\Sidebar.tsx\",\n                            lineNumber: 44,\n                            columnNumber: 13\n                        }, this),\n                        /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"button\", {\n                            onClick: ()=>setSidebarOpen(!sidebarOpen),\n                            className: (0,_utils_helpers__WEBPACK_IMPORTED_MODULE_4__.cn)(\"ml-auto text-gray-500 hover:text-white transition-colors\", !sidebarOpen && \"mx-auto\"),\n                            children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(framer_motion__WEBPACK_IMPORTED_MODULE_15__.motion.div, {\n                                animate: {\n                                    rotate: sidebarOpen ? 0 : 180\n           
+  328  
+
+  403  "use strict";
+  404: ⟪ 1446 characters skipped ⟫ED_MODULE_5__ = __webpack_require__(/*! @/components/Providers */ \"(rsc)/./src/components/Providers.tsx\");\n// 📁 LOCATION: frontend/src/app/layout.tsx\n\n\n\n\n\n\nconst metadata = {\n    title: \"NexusMind — Personal Memory OS\",\n    description: \"AI-powered personal cognitive memory operating system\"\n};\nfunction RootLayout({ children }) {\n    return /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"html\", {\n        lang: \"en\",\n        children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"body\", {\n            className: \"bg-surface text-white\",\n            children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(_components_Providers__WEBPACK_IMPORTED_MODULE_5__[\"default\"], {\n                children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(_context_AppContext__WEBPACK_IMPORTED_MODULE_2__.AppProvider, {\n                    children: [\n                        /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"div\", {\n                            className: \"flex h-screen overflow-hidden\",\n              
+  405  
+
+frontend\.next\server\app\_not-found\page.js:
+  305  "use strict";
+  306: ⟪ 12871 characters skipped ⟫                            opacity: 0\n                            },\n                            className: \"font-bold text-white text-sm tracking-wide\",\n                            children: \"NexusMind\"\n                        }, void 0, false, {\n                            fileName: \"E:\\\\Cognitive_Personal_Memory_Operating_System\\\\frontend\\\\src\\\\components\\\\Layout\\\\Sidebar.tsx\",\n                            lineNumber: 44,\n                            columnNumber: 13\n                        }, this),\n                        /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"button\", {\n                            onClick: ()=>setSidebarOpen(!sidebarOpen),\n                            className: (0,_utils_helpers__WEBPACK_IMPORTED_MODULE_4__.cn)(\"ml-auto text-gray-500 hover:text-white transition-colors\", !sidebarOpen && \"mx-auto\"),\n                            children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(framer_motion__WEBPACK_IMPORTED_MODULE_15__.motion.div, {\n                                animate: {\n                                    rotate: sidebarOpen ? 0 : 180\n           
+  307  
+
+  371  "use strict";
+  372: ⟪ 1446 characters skipped ⟫ED_MODULE_5__ = __webpack_require__(/*! @/components/Providers */ \"(rsc)/./src/components/Providers.tsx\");\n// 📁 LOCATION: frontend/src/app/layout.tsx\n\n\n\n\n\n\nconst metadata = {\n    title: \"NexusMind — Personal Memory OS\",\n    description: \"AI-powered personal cognitive memory operating system\"\n};\nfunction RootLayout({ children }) {\n    return /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"html\", {\n        lang: \"en\",\n        children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"body\", {\n            className: \"bg-surface text-white\",\n            children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(_components_Providers__WEBPACK_IMPORTED_MODULE_5__[\"default\"], {\n                children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(_context_AppContext__WEBPACK_IMPORTED_MODULE_2__.AppProvider, {\n                    children: [\n                        /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"div\", {\n                            className: \"flex h-screen overflow-hidden\",\n              
+  373  
+
+frontend\.next\server\app\search\page.js:
+  326  "use strict";
+  327: ⟪ 12871 characters skipped ⟫                            opacity: 0\n                            },\n                            className: \"font-bold text-white text-sm tracking-wide\",\n                            children: \"NexusMind\"\n                        }, void 0, false, {\n                            fileName: \"E:\\\\Cognitive_Personal_Memory_Operating_System\\\\frontend\\\\src\\\\components\\\\Layout\\\\Sidebar.tsx\",\n                            lineNumber: 44,\n                            columnNumber: 13\n                        }, this),\n                        /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"button\", {\n                            onClick: ()=>setSidebarOpen(!sidebarOpen),\n                            className: (0,_utils_helpers__WEBPACK_IMPORTED_MODULE_4__.cn)(\"ml-auto text-gray-500 hover:text-white transition-colors\", !sidebarOpen && \"mx-auto\"),\n                            children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(framer_motion__WEBPACK_IMPORTED_MODULE_15__.motion.div, {\n                                animate: {\n                                    rotate: sidebarOpen ? 0 : 180\n           
+  328  
+
+  414  "use strict";
+  415: ⟪ 1446 characters skipped ⟫ED_MODULE_5__ = __webpack_require__(/*! @/components/Providers */ \"(rsc)/./src/components/Providers.tsx\");\n// 📁 LOCATION: frontend/src/app/layout.tsx\n\n\n\n\n\n\nconst metadata = {\n    title: \"NexusMind — Personal Memory OS\",\n    description: \"AI-powered personal cognitive memory operating system\"\n};\nfunction RootLayout({ children }) {\n    return /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"html\", {\n        lang: \"en\",\n        children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"body\", {\n            className: \"bg-surface text-white\",\n            children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(_components_Providers__WEBPACK_IMPORTED_MODULE_5__[\"default\"], {\n                children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(_context_AppContext__WEBPACK_IMPORTED_MODULE_2__.AppProvider, {\n                    children: [\n                        /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"div\", {\n                            className: \"flex h-screen overflow-hidden\",\n              
+  416  
+
+frontend\.next\static\chunks\app\layout.js:
+  892  "use strict";
+  893: ⟪ 12996 characters skipped ⟫                            opacity: 0\n                            },\n                            className: \"font-bold text-white text-sm tracking-wide\",\n                            children: \"NexusMind\"\n                        }, void 0, false, {\n                            fileName: \"E:\\\\Cognitive_Personal_Memory_Operating_System\\\\frontend\\\\src\\\\components\\\\Layout\\\\Sidebar.tsx\",\n                            lineNumber: 44,\n                            columnNumber: 13\n                        }, this),\n                        /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"button\", {\n                            onClick: ()=>setSidebarOpen(!sidebarOpen),\n                            className: (0,_utils_helpers__WEBPACK_IMPORTED_MODULE_4__.cn)(\"ml-auto text-gray-500 hover:text-white transition-colors\", !sidebarOpen && \"mx-auto\"),\n                            children: /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(framer_motion__WEBPACK_IMPORTED_MODULE_15__.motion.div, {\n                                animate: {\n                                    rotate: sidebarOpen ? 0 : 180\n           
+  894  
+
+frontend\.next\static\chunks\app\page.js:
+  859  "use strict";
+  860: ⟪ 8749 characters skipped ⟫_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"h1\", {\n                                        className: \"text-2xl font-bold text-white\",\n                                        children: \"NexusMind\"\n                                    }, void 0, false, {\n                                        fileName: \"E:\\\\Cognitive_Personal_Memory_Operating_System\\\\frontend\\\\src\\\\app\\\\page.tsx\",\n                                        lineNumber: 37,\n                                        columnNumber: 13\n                                    }, this),\n                                    /*#__PURE__*/ (0,react_jsx_dev_runtime__WEBPACK_IMPORTED_MODULE_0__.jsxDEV)(\"p\", {\n                                        className: \"text-sm text-gray-400\",\n                                        children: \"Your personal cognitive memory OS\"\n                                    }, void 0, false, {\n                                        fileName: \"E:\\\\Cognitive_Personal_Memory_Operating_System\\\\frontend\\\\src\\\\app\\\\page.tsx\",\n                                        lineNumber: 38,\n                                        columnNumber: 13\n                    
+  861  
+
+frontend\src\app\layout.tsx:
+   9  export const metadata: Metadata = {
+  10:   title:       "NexusMind — Personal Memory OS",
+  11    description: "AI-powered personal cognitive memory operating system",
+
+frontend\src\app\page.tsx:
+  36            <div>
+  37:             <h1 className="text-2xl font-bold text-white">NexusMind</h1>
+  38              <p className="text-sm text-gray-400">Your personal cognitive memory OS</p>
+
+frontend\src\app\chat\page.tsx:
+  73            <div>
+  74:             <h1 className="text-sm font-semibold text-white">NexusMind AI</h1>
+  75              <p className="text-xs text-gray-500">Ask anything about your memories</p>
+
+  92              <div className="text-center">
+  93:               <h2 className="text-lg font-semibold text-white mb-1">Ask NexusMind</h2>
+  94                <p className="text-sm text-gray-400 max-w-sm">Ask questions about your files. The AI searches your memories and explains exactly which documents it used.</p>
+
+frontend\src\app\contradictions\page.tsx:
+  24          <p className="text-sm text-gray-400 mt-0.5">
+  25:           Facts that conflict across your documents — detected automatically by NexusMind
+  26          </p>
+
+frontend\src\app\upload\page.tsx:
+  36          <h1 className="text-xl font-bold text-white">Upload & Import</h1>
+  37:         <p className="text-sm text-gray-400 mt-0.5">Add files to NexusMind's memory</p>
+  38        </div>
+
+frontend\src\components\Layout\Sidebar.tsx:
+  47              >
+  48:               NexusMind
+  49              </motion.span>

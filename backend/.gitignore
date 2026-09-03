@@ -1,0 +1,66 @@
+# LOCATION: backend/.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Database files (contain personal data — never commit)
+*.db
+*.sqlite
+*.sqlite3
+
+# FAISS index (regenerated in RAM on startup)
+vector_db/faiss.index
+vector_db/faiss_meta.json
+
+# Uploads (personal files)
+uploads/*
+!uploads/.gitkeep
+uploads.zip
+
+# Research experiments & results
+research_results/
+research_experiment_*.py
+
+# Data folder
+data/memories.json
+data/
+
+# YOLOv8 model (downloaded automatically if absent)
+*.pt
+*.onnx
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
