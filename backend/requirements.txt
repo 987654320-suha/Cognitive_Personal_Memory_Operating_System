@@ -1,6 +1,4 @@
-# CogniSphere v2.0 — Backend Dependencies (CPU-Only)
---index-url https://download.pytorch.org/whl/cpu
---extra-index-url https://pypi.org/simple
+# CogniSphere v2.0 — Backend Dependencies (Render Production)
 
 # Core
 fastapi==0.111.0
@@ -10,9 +8,9 @@ psycopg2-binary>=2.9.9
 python-multipart==0.0.9
 pydantic==2.7.1
 
-# AI / ML (CPU-only PyTorch)
-torch==2.3.0+cpu
-torchvision==0.18.0+cpu
+# AI / ML
+torch==2.3.0
+torchvision==0.18.0
 sentence-transformers>=3.0.0
 faiss-cpu>=1.7.0
 transformers==4.41.0
