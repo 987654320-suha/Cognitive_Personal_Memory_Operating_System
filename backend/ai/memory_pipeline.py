@@ -1,4 +1,4 @@
-﻿# ðŸ“ LOCATION: backend/ai/memory_pipeline.py
+# ðŸ“ LOCATION: backend/ai/memory_pipeline.py
 """
 memory_pipeline.py  â€” ACCURACY FIX v2
 ========================================
@@ -60,14 +60,21 @@ def run_pipeline(
     source_hint: str = None,
     update_index: bool = True,
 ) -> dict:
+    import time
+    start_total = time.perf_counter()
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
     ext = path.suffix.lower()
-
-    # FIX: Use clean human title, fallback to enriched filename
     raw_title = source_hint or path.stem.replace("_", " ").replace("-", " ").title()
+
+    try:
+        file_size_kb = path.stat().st_size / 1024
+    except Exception:
+        file_size_kb = 0
+
+    print(f"[UPLOAD START] {path.name} ({file_size_kb:.1f} KB, ext: {ext})")
 
     result = {
         "source":           path.name,
@@ -83,52 +90,72 @@ def run_pipeline(
         "access_count":     0,
     }
 
-    # â”€â”€ Step 1: Extract text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Step 1: Text extraction ───────────────────────────────────────────────
+    start_extract = time.perf_counter()
+    print(f"[TEXT EXTRACTION START] {path.name}")
     text    = ""
     objects = []
 
-    if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"):
-        text    = _run_ocr(file_path)
-        objects = _run_object_detection(file_path)
-        result["image"] = f"/uploads/{path.name}"
-    elif ext == ".pdf":
-        text = _run_pdf(file_path)
-    elif ext in (".docx", ".doc"):
-        text = _run_docx(file_path)
-    else:
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            text = ""
+    try:
+        if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"):
+            text    = _run_ocr(file_path)
+            objects = _run_object_detection(file_path)
+            result["image"] = f"/uploads/{path.name}"
+        elif ext == ".pdf":
+            text = _run_pdf(file_path)
+        elif ext in (".docx", ".doc"):
+            text = _run_docx(file_path)
+        else:
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                text = ""
+    except Exception as extract_err:
+        print(f"[TEXT EXTRACTION ERROR] {path.name}: {extract_err}")
+        text = ""
 
     result["text_content"] = text
     result["objects"]      = objects
     result["description"]  = text[:500] if text else ""
+    print(f"[TEXT EXTRACTION COMPLETE] {path.name}: {len(text)} chars extracted in {time.perf_counter() - start_extract:.3f}s")
 
-    # â”€â”€ Step 2: Smart title from OCR/text if filename is generic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Step 2: Smart title from OCR/text if filename is generic ──────────────
     is_generic_title = _re.match(r"^(img|image|photo|dsc|doc|file|scan)\d*$", raw_title.lower())
     if is_generic_title and text:
-        # Extract first meaningful line from text as title
         lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 5]
         if lines:
             result["title"] = lines[0][:80]
 
-    # â”€â”€ Step 3: Enriched embedding (FULL TEXT, not just 1000 chars) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    from ai.embedding_service import get_embedding
+    # ── Step 3: Chunking & Text Preparation ───────────────────────────────────
+    start_chunk = time.perf_counter()
+    print(f"[CHUNKING START] Preparing embedding text for {path.name}")
     enriched_title = _enrich_title(result["title"], text)
-    # FIX: embed title + full text (up to 4000 chars) for better recall
     embed_text = f"{enriched_title}\n\n{text[:3500]}"
-    result["embedding"] = get_embedding(embed_text)
+    print(f"[CHUNKING COMPLETE] Prepared {len(embed_text)} chars in {time.perf_counter() - start_chunk:.4f}s")
 
-    # â”€â”€ Step 4: Importance scoring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Step 4: Embedding generation ──────────────────────────────────────────
+    start_embed = time.perf_counter()
+    print(f"[EMBEDDING START] Computing vector for {path.name}")
+    from ai.embedding_service import get_embedding
+    try:
+        result["embedding"] = get_embedding(embed_text)
+        print(f"[EMBEDDING COMPLETE] Generated {len(result['embedding'])}-dim vector in {time.perf_counter() - start_embed:.3f}s")
+    except Exception as emb_err:
+        print(f"[EMBEDDING ERROR] {emb_err}")
+        result["embedding"] = []
+
+    # ── Step 5: Importance scoring & Summary ──────────────────────────────────
     result["importance_score"] = score_importance(result["title"], text)
 
-    # â”€â”€ Step 5: Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if text and len(text) > 80:
+        start_sum = time.perf_counter()
         summary = generate_summary(text)
         result["description"] = summary or result["description"]
+        print(f"[SUMMARY COMPLETE] Generated summary in {time.perf_counter() - start_sum:.3f}s")
 
-    # â”€â”€ Step 6: Duplicate check before saving â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Step 6: Database insert / duplicate check ─────────────────────────────
+    start_db = time.perf_counter()
+    print(f"[DATABASE INSERT START] Saving {path.name} to DB")
     db = SessionLocal()
     try:
         existing = db.query(Memory).filter(Memory.source == result["source"]).first()
@@ -155,22 +182,35 @@ def run_pipeline(
         db.commit()
         db.refresh(memory)
         result["id"] = memory.id
+        print(f"[DATABASE INSERT COMPLETE] Saved Memory #{memory.id} in {time.perf_counter() - start_db:.3f}s")
 
-        # â”€â”€ Step 7: FAISS + BM25 rebuild â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── Step 7: Search index update ───────────────────────────────────────
         if update_index:
-            _update_search_index()
+            start_idx = time.perf_counter()
+            print(f"[SEARCH INDEX UPDATE START]")
+            try:
+                _update_search_index()
+                print(f"[SEARCH INDEX UPDATE COMPLETE] in {time.perf_counter() - start_idx:.3f}s")
+            except Exception as idx_err:
+                print(f"[SEARCH INDEX UPDATE WARNING] {idx_err}")
 
-        # â”€â”€ Step 8: GAMA goal linking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        gama = GAMAService(db)
-        detected_goals = gama.link_memory_to_goals(
-            memory_id=memory.id,
-            text_content=f"{result['title']} {text}",
-        )
-        result["detected_goals"] = detected_goals
+        # ── Step 8: GAMA goal linking ─────────────────────────────────────────
+        try:
+            gama = GAMAService(db)
+            detected_goals = gama.link_memory_to_goals(
+                memory_id=memory.id,
+                text_content=f"{result['title']} {text}",
+            )
+            result["detected_goals"] = detected_goals
+        except Exception as ge:
+            print(f"[GAMA Warning] {ge}")
+            result["detected_goals"] = []
 
     finally:
         db.close()
 
+    total_time = time.perf_counter() - start_total
+    print(f"[UPLOAD COMPLETE] Successfully processed {path.name} in {total_time:.3f}s (Memory #{result.get('id')})")
     return result
 
 

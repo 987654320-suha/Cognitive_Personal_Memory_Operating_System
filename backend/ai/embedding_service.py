@@ -47,7 +47,11 @@ def _load_model() -> Optional[object]:
     """
     try:
         from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer(MODEL_NAME, device="cpu")
+        # Try loading from local cached weights first (instant, no network check latency)
+        try:
+            model = SentenceTransformer(MODEL_NAME, device="cpu", local_files_only=True)
+        except Exception:
+            model = SentenceTransformer(MODEL_NAME, device="cpu")
         dim = getattr(model, "get_sentence_embedding_dimension", lambda: "unknown")()
         print(f"[Embedding] Model loaded on-demand: {MODEL_NAME} ({dim}-dim, CPU-optimized)")
         return model
@@ -79,6 +83,11 @@ def _get_model() -> Optional[object]:
                 _model = _load_model()
     
     return _model
+
+
+def is_model_loaded() -> bool:
+    """Returns True if the embedding model is already loaded in RAM."""
+    return _model is not None
 
 
 def _preprocess(text: str) -> str:

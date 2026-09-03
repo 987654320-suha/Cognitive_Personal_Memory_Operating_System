@@ -29,10 +29,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let failed  = 0;
     for (const file of files) {
       try {
-        await uploadFile(file);
+        const res = await uploadFile(file);
+        console.log(`[Upload] Ingested ${file.name}:`, res);
         success++;
-      } catch {
+      } catch (err: any) {
         failed++;
+        const detail = err?.response?.data?.detail || err?.message || "Upload error";
+        console.error(`[Upload] Failed to upload ${file.name}:`, detail);
       }
     }
     setUploading(false);

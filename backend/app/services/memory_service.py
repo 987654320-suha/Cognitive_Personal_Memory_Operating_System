@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/services/memory_service.py
 ================================
 Service layer between FastAPI routes and the memory pipeline.
@@ -13,15 +13,19 @@ from sqlalchemy.orm import Session
 from ai.memory_pipeline import run_pipeline
 from app.services.database_service import get_all_memories, get_memory_by_id, delete_memory
 
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads")).resolve()
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def ingest_uploaded_file(file_bytes: bytes, filename: str) -> dict:
     """Save upload to disk then run the full pipeline."""
-    dest = UPLOAD_DIR / filename
+    import time
+    t0 = time.perf_counter()
+    safe_filename = Path(filename).name
+    dest = UPLOAD_DIR / safe_filename
     dest.write_bytes(file_bytes)
-    return run_pipeline(str(dest), source_hint=Path(filename).stem.replace("_", " ").title())
+    print(f"[FILE SAVED] {safe_filename} ({len(file_bytes)/1024:.1f} KB) in {time.perf_counter() - t0:.3f}s")
+    return run_pipeline(str(dest), source_hint=Path(safe_filename).stem.replace("_", " ").title())
 
 
 def list_memories() -> list[dict]:
