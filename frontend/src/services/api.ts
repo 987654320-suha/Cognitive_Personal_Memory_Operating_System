@@ -270,3 +270,48 @@ export const reinforceMemory  = (id: number) => api.post(`/decay/reinforce/${id}
 
 export const runExperiment = (config: ExperimentConfig) =>
   api.post<ExperimentResult>("/experiment/search", config).then(r => r.data);
+
+// ── Desktop Sync ──────────────────────────────────────────────────────────────
+
+export interface WatchedFolder {
+  id: string;
+  name: string;
+  path: string;
+  enabled: boolean;
+  status?: string;
+  file_count?: number;
+}
+
+export interface SyncDevice {
+  id: number;
+  device_id: string;
+  device_name: string;
+  os_info: string;
+  status: string;
+  watched_folders: WatchedFolder[];
+  last_heartbeat: string;
+  last_sync: string | null;
+  created_at: string;
+  indexed_files_count?: number;
+}
+
+export interface SyncOverview {
+  total_devices: number;
+  total_indexed_files: number;
+  devices: SyncDevice[];
+}
+
+export const getSyncDevices = () =>
+  api.get<SyncOverview>("/sync/devices").then(r => r.data);
+
+export const pairDevice = (deviceName = "Windows PC", osInfo = "Windows") =>
+  api.post("/sync/pair", { device_name: deviceName, os_info: osInfo }).then(r => r.data);
+
+export const unpairDevice = (deviceId: string) =>
+  api.delete(`/sync/devices/${deviceId}`).then(r => r.data);
+
+export const updateDeviceFolders = (deviceId: string, folders: WatchedFolder[]) =>
+  api.post(`/sync/devices/${deviceId}/folders`, { watched_folders: folders }).then(r => r.data);
+
+export const getSyncStatus = () =>
+  api.get<SyncOverview>("/sync/status").then(r => r.data);

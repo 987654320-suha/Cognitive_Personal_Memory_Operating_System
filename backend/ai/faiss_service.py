@@ -46,10 +46,23 @@ def build_index(memories: list[dict]) -> None:
             valid_memories.append(mem)
 
     if not vectors:
-        print("[FAISS] No embeddings found â€” run update_embeddings.py first")
+        print("[FAISS] No embeddings found — run update_embeddings.py first")
         return
 
-    matrix = np.array(vectors, dtype=np.float32)
+    # Group vectors by dimension and keep the dominant dimension to handle mixed dimensions gracefully
+    from collections import Counter
+    dim_counts = Counter(len(v) for v in vectors)
+    target_dim = dim_counts.most_common(1)[0][0]
+
+    filtered_vectors = []
+    filtered_memories = []
+    for vec, mem in zip(vectors, valid_memories):
+        if len(vec) == target_dim:
+            filtered_vectors.append(vec)
+            filtered_memories.append(mem)
+
+    valid_memories = filtered_memories
+    matrix = np.array(filtered_vectors, dtype=np.float32)
 
     if FAISS_AVAILABLE:
         dim    = matrix.shape[1]

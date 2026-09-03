@@ -49,6 +49,7 @@ from app.routes.trajectory_routes     import router as trajectory_router
 from app.routes.decay_routes          import router as decay_router
 from app.routes.memory_update_routes  import router as memory_update_router
 from app.routes.experiment_routes     import router as experiment_router
+from app.routes.sync_routes           import router as sync_router
 
 
 # ── App setup ─────────────────────────────────────────────────────────────────
@@ -108,6 +109,7 @@ for router in [
     import_router, graph_router, contradiction_router,
     trajectory_router, decay_router,
     memory_update_router, experiment_router,
+    sync_router,
 ]:
     app.include_router(router)
 
