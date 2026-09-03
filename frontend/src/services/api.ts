@@ -187,12 +187,93 @@ export const getMemoryHistory = (id: number) =>
 export const updateImportance = (id: number, importance_score: number) =>
   api.patch(`/memories/${id}/importance`, { importance_score }).then(r => r.data);
 
-// ── Upload ────────────────────────────────────────────────────────────────────
+// ── Upload & Job Polling ──────────────────────────────────────────────────────
 
-export const uploadFile = (file: File) => {
+export interface JobStatusResponse {
+  job_id:           string;
+  filename:         string;
+  status:           "pending" | "processing" | "completed" | "failed";
+  stage:            string;
+  message?:         string;
+  memory_id?:       number;
+  memory?:          any;
+  error?:           string;
+  processing_time?: number;
+  created_at?:      string;
+  updated_at?:      string;
+}
+
+export const getJobStatus = async (jobId: string): Promise<JobStatusResponse> => {
+  try {
+    const res = await api.get<JobStatusResponse>(`/upload/status/${jobId}`);
+    return res.data;
+  } catch {
+    const res = await api.get<JobStatusResponse>(`/status/${jobId}`);
+    return res.data;
+  }
+};
+
+export const pollJobStatus = async (
+  jobId: string,
+  onProgress?: (stage: string, message: string) => void,
+  timeoutMs: number = 90000
+): Promise<any> => {
+  const startTime = Date.now();
+  const pollInterval = 1200;
+
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const job = await getJobStatus(jobId);
+      if (onProgress && (job.stage || job.message)) {
+        onProgress(job.stage, job.message || "");
+      }
+
+      if (job.status === "completed") {
+        return job.memory || { id: job.memory_id, source: job.filename };
+      }
+
+      if (job.status === "failed") {
+        throw new Error(job.error || job.message || "Document processing failed");
+      }
+    } catch (err: any) {
+      if (err.message && !err.response) {
+        throw err;
+      }
+      console.warn(`[Job Poll] Retrying poll for job ${jobId}...`);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error("Document processing timed out after 90 seconds");
+};
+
+export const uploadFile = async (
+  file: File,
+  onProgress?: (stage: string, message: string) => void
+) => {
   const form = new FormData();
   form.append("file", file);
-  return api.post("/upload/", form, { headers: { "Content-Type": "multipart/form-data" } }).then(r => r.data);
+  const res = await api.post("/upload/", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  const data = res.data;
+
+  // Immediate legacy response support
+  if (data.success && data.memory) {
+    return data.memory;
+  }
+
+  // Asynchronous job support (HTTP 202)
+  if (data.job_id) {
+    if (onProgress) {
+      onProgress("processing", data.message || "Processing started");
+    }
+    return await pollJobStatus(data.job_id, onProgress);
+  }
+
+  return data;
 };
 
 // ── Chat ──────────────────────────────────────────────────────────────────────

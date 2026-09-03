@@ -9,7 +9,7 @@ import { Upload } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 
 export default function UploadZone() {
-  const { uploadFiles, uploading } = useApp();
+  const { uploadFiles, uploading, uploadStage } = useApp();
 
   const onDrop = useCallback(
     (accepted: File[]) => {
@@ -69,7 +69,7 @@ export default function UploadZone() {
           <div>
             <p className="text-sm font-medium text-white">
               {uploading
-                ? "Processing files..."
+                ? (uploadStage || "Processing files...")
                 : isDragActive
                 ? "Drop files here"
                 : "Drop files or click to upload"}

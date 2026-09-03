@@ -189,6 +189,24 @@ def recent_alias(limit: int = 20):
         db.close()
 
 
+@app.get("/status/{job_id}", tags=["upload"])
+def job_status_root_alias(job_id: str):
+    """Root-level alias for polling upload jobs: /status/{job_id}."""
+    from app.services.job_service import get_job_manager
+    from fastapi import HTTPException
+    job = get_job_manager().get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+    return job.to_dict()
+
+@app.get("/status", tags=["upload"])
+def upload_status_root_alias():
+    """Root-level alias for upload/AI status check."""
+    from app.routes.upload_routes import upload_service_status
+    return upload_service_status()
+
+
+
 # ── SQLite column migrations ──────────────────────────────────────────────────
 def _run_sqlite_migrations():
     """

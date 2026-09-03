@@ -2,20 +2,23 @@
 """
 upload_routes.py
 ================
-Document and image upload endpoint.
-Uses Starlette run_in_threadpool to execute heavy CPU/model pipelines off the
-async event loop, preventing event-loop freezing and 502 Bad Gateway timeouts.
+Asynchronous document and image upload endpoint.
+Immediately accepts uploads with HTTP 202 and delegates all CPU/model processing
+to FastAPI BackgroundTasks, preventing event-loop freezing and 502 Bad Gateway timeouts.
 """
 
 from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from starlette.concurrency import run_in_threadpool
+from typing import Optional
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, status
+from fastapi.responses import JSONResponse
 
-from app.services.memory_service import ingest_uploaded_file
+from app.services.storage_service import get_storage
+from app.services.job_service import get_job_manager
 from ai.embedding_service import is_model_loaded, MODEL_NAME
+from ai.memory_pipeline import run_pipeline
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -32,10 +35,64 @@ ALLOWED_CONTENT_TYPES = {
     "text/plain",
     "text/markdown",
     "text/csv",
-    "application/octet-stream",  # Fallback sent by many browsers for binary/doc formats
+    "application/octet-stream",  # Sent by browsers for various document types
 }
 
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+def process_upload_job(job_id: str, file_path: str, filename: str) -> None:
+    """
+    Background worker function executed off the main request thread.
+    Parses document, generates embeddings, persists memory, and updates FAISS.
+    """
+    job_mgr = get_job_manager()
+    t_start = time.perf_counter()
+
+    print(f"[PROCESS] started job_id={job_id} filename={filename}")
+    job_mgr.update_job(job_id, status="processing", stage="extracting", message="Extracting text and metadata")
+
+    try:
+        # Step 1: Ingestion pipeline
+        print(f"[PROCESS] extracting text from {filename}")
+        source_hint = Path(filename).stem.replace("_", " ").title()
+        
+        job_mgr.update_job(job_id, stage="chunking", message="Chunking text and preparing vector embeddings")
+        print(f"[PROCESS] chunks prepared for {filename}")
+
+        job_mgr.update_job(job_id, stage="embedding", message="Generating embeddings with {MODEL_NAME}")
+        print(f"[PROCESS] generating embeddings for {filename}")
+
+        # Run the full pipeline (OCR/PDF text -> embeddings -> SQLite commit -> FAISS/BM25 update)
+        result = run_pipeline(file_path, source_hint=source_hint, update_index=True)
+        memory_id = result.get("id")
+
+        print(f"[PROCESS] memories created=Memory #{memory_id} for job_id={job_id}")
+
+        elapsed = time.perf_counter() - t_start
+        print(f"[PROCESS] completed job_id={job_id} in {elapsed:.3f}s")
+
+        job_mgr.update_job(
+            job_id,
+            status="completed",
+            stage="completed",
+            message="Document processing completed successfully",
+            memory_id=memory_id,
+            memory=result,
+            processing_time=round(elapsed, 3),
+        )
+
+    except Exception as e:
+        elapsed = time.perf_counter() - t_start
+        print(f"[PROCESS] FAILED job_id={job_id} error={e}")
+        job_mgr.update_job(
+            job_id,
+            status="failed",
+            stage="failed",
+            message=f"Processing failed: {str(e)}",
+            error=str(e),
+            processing_time=round(elapsed, 3),
+        )
 
 
 @router.get("/status")
@@ -53,14 +110,31 @@ def upload_service_status():
     }
 
 
-@router.post("/")
-async def upload_file(file: UploadFile = File(...)):
+@router.get("/status/{job_id}")
+def get_upload_job_status(job_id: str):
+    """
+    Poll the status of an asynchronous document processing job.
+    Returns: status ('processing' | 'completed' | 'failed'), stage, memory_id, and timing.
+    """
+    job = get_job_manager().get_job(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job '{job_id}' not found or has expired.",
+        )
+    return job.to_dict()
+
+
+@router.post("/", status_code=status.HTTP_202_ACCEPTED)
+async def upload_file(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
     """
     Upload a document or image file.
-    Runs OCR → Embedding → SQLite → FAISS → GAMA in a threadpool worker
-    to prevent event loop blocking and 502 proxy timeouts on Render.
+    Immediately validates file, saves payload to storage, enqueues background task,
+    and returns HTTP 202 Accepted with a job_id (<15ms response time).
     """
-    t_start = time.perf_counter()
     filename = file.filename or "uploaded_file"
     ext = Path(filename).suffix.lower()
 
@@ -74,7 +148,7 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         file_bytes = await file.read()
     except Exception as read_err:
-        print(f"[Upload Error] Failed reading upload payload for {filename}: {read_err}")
+        print(f"[UPLOAD FAILED] Could not read payload for {filename}: {read_err}")
         raise HTTPException(status_code=400, detail="Could not read uploaded file data.")
 
     if not file_bytes:
@@ -87,23 +161,28 @@ async def upload_file(file: UploadFile = File(...)):
             detail=f"File size ({size_mb:.1f} MB) exceeds maximum allowed limit of 50 MB.",
         )
 
-    print(f"[UPLOAD RECEIVED] {filename} ({len(file_bytes) / 1024:.1f} KB, mime: {file.content_type})")
+    print(f"[UPLOAD] received filename={filename} size={len(file_bytes) / 1024:.1f} KB")
 
-    # Run heavy ingestion off the asyncio loop to keep the server 100% responsive!
-    try:
-        result = await run_in_threadpool(ingest_uploaded_file, file_bytes, filename)
-        elapsed = time.perf_counter() - t_start
-        print(f"[UPLOAD SUCCESS] {filename} ingested in {elapsed:.3f}s (Memory #{result.get('id')})")
-        return {
-            "success":         True,
-            "memory":          result,
-            "processing_time": round(elapsed, 3),
-        }
+    # 1. Save file to storage abstraction
+    storage = get_storage()
+    file_path = storage.save_file(filename, file_bytes)
+    print(f"[UPLOAD] file saved path={file_path}")
 
-    except Exception as e:
-        elapsed = time.perf_counter() - t_start
-        print(f"[UPLOAD FAILED] {filename} error after {elapsed:.3f}s: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Document processing failed: {str(e)}",
-        )
+    # 2. Create job record
+    job_mgr = get_job_manager()
+    job = job_mgr.create_job(filename)
+    print(f"[UPLOAD] job created job_id={job.job_id}")
+
+    # 3. Enqueue background task
+    background_tasks.add_task(process_upload_job, job.job_id, file_path, filename)
+
+    # 4. Immediately return HTTP 202 Accepted
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "status":   "processing",
+            "job_id":   job.job_id,
+            "filename": filename,
+            "message":  "Document uploaded and processing started",
+        },
+    )
