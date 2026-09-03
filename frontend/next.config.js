@@ -6,6 +6,7 @@ const nextConfig = {
     domains: ["localhost"],
     remotePatterns: [
       { protocol: "http", hostname: "localhost", port: "8000", pathname: "/uploads/**" },
+      { protocol: "https", hostname: "**.onrender.com", pathname: "/uploads/**" },
     ],
   },
   env: {

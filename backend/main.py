@@ -62,6 +62,7 @@ app = FastAPI(
 
 # ── Dynamic CORS Configuration ────────────────────────────────────────────────
 allowed_origins = [
+    "https://cognisphere-frontend.onrender.com",
     "http://localhost:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3000",
@@ -71,14 +72,14 @@ allowed_origins = [
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url:
     for u in frontend_url.split(","):
-        u = u.strip()
+        u = u.strip().rstrip("/")
         if u and u not in allowed_origins:
             allowed_origins.append(u)
 
 cors_origins_env = os.getenv("CORS_ORIGINS")
 if cors_origins_env:
     for u in cors_origins_env.split(","):
-        u = u.strip()
+        u = u.strip().rstrip("/")
         if u and u not in allowed_origins:
             allowed_origins.append(u)
 
@@ -87,6 +88,7 @@ app.add_middleware(LoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"^https:\/\/.*\.onrender\.com$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

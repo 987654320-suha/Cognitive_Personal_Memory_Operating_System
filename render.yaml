@@ -28,7 +28,7 @@ services:
       - key: OLLAMA_BASE_URL
         sync: false
       - key: FRONTEND_URL
-        sync: false
+        value: https://cognisphere-frontend.onrender.com
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS
