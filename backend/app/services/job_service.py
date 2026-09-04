@@ -20,6 +20,7 @@ from typing import Dict, Optional, Any
 class UploadJob:
     job_id: str
     filename: str
+    user_id: Optional[int] = None
     status: str = "pending"          # pending | processing | completed | failed
     stage: str = "received"          # received | saved | extracting | chunking | embedding | saving_db | completed | failed
     message: str = "Job created"
@@ -35,6 +36,7 @@ class UploadJob:
         return {
             "job_id":          self.job_id,
             "filename":        self.filename,
+            "user_id":         self.user_id,
             "status":          self.status,
             "stage":           self.stage,
             "message":         self.message,
@@ -55,13 +57,14 @@ class JobManager:
         self._lock = Lock()
         self._retention_seconds = max_retention_seconds
 
-    def create_job(self, filename: str) -> UploadJob:
+    def create_job(self, filename: str, user_id: Optional[int] = None) -> UploadJob:
         with self._lock:
             self._prune_unlocked()
             job_id = str(uuid.uuid4())
             job = UploadJob(
                 job_id=job_id,
                 filename=filename,
+                user_id=user_id,
                 status="processing",
                 stage="received",
                 message="Document uploaded and processing started",

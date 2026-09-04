@@ -30,10 +30,12 @@ class IndexedFile(Base):
     memory_id        = Column(Integer, nullable=True)     # Links to memories.id
     error_message    = Column(Text, nullable=True)
     is_deleted       = Column(Boolean, default=False, nullable=False)
+    user_id          = Column(Integer, index=True, nullable=True)
 
     def to_dict(self) -> dict:
         return {
             "id":               self.id,
+            "user_id":          self.user_id,
             "device_id":        self.device_id,
             "relative_path":    self.relative_path,
             "filename":         self.filename,

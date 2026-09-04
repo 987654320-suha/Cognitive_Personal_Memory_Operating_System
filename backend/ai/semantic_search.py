@@ -1,4 +1,4 @@
-﻿# ðŸ“ LOCATION: backend/ai/semantic_search.py
+# ðŸ“ LOCATION: backend/ai/semantic_search.py
 
 """
 semantic_search.py
@@ -27,11 +27,12 @@ def acma_search(
     db: Session,
     top_k: int = 10,
     weights: dict = None,
+    user_id: int | None = None,
 ) -> list[dict]:
 
     t_total = time.time()
 
-    all_memories = get_all_memories()
+    all_memories = get_all_memories(user_id=user_id)
 
     if not all_memories:
         return []
@@ -295,6 +296,7 @@ def acma_search(
 def semantic_search(
     query: str,
     top_k: int = 10,
+    user_id: int | None = None,
 ) -> list[dict]:
 
     """
@@ -302,7 +304,7 @@ def semantic_search(
     Used for autocomplete/previews.
     """
 
-    all_memories = get_all_memories()
+    all_memories = get_all_memories(user_id=user_id)
 
     if not all_memories:
         return []

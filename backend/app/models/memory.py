@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/models/memory.py
 ====================
 Updated Memory model. Adds importance_score and access_count
@@ -31,14 +31,18 @@ class Memory(Base):
     importance_score = Column(Float,   default=0.5, nullable=False, server_default="0.5")
     access_count     = Column(Integer, default=0,   nullable=False, server_default="0")
 
-    # Versioning fields â€” for memory update history / temporal experiments
+    # Versioning fields — for memory update history / temporal experiments
     version          = Column(Integer, default=1,    nullable=False, server_default="1")
     parent_id        = Column(Integer, default=None, nullable=True)
+
+    # Multi-user isolation
+    user_id          = Column(Integer, index=True,   nullable=True)
 
     def to_dict(self):
         import json
         return {
             "id":               self.id,
+            "user_id":          self.user_id,
             "title":            self.title,
             "description":      self.description,
             "text_content":     self.text_content or "",

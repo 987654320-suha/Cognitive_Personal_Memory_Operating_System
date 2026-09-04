@@ -1,4 +1,4 @@
-﻿# ðŸ“ LOCATION: backend/app/services/stats_service.py
+# ðŸ“ LOCATION: backend/app/services/stats_service.py
 """
 stats_service.py
 ================
@@ -16,13 +16,19 @@ from app.models.goal_memory import GoalMemory
 import json
 
 
-def get_full_stats(db: Session) -> dict:
+def get_full_stats(db: Session, user_id: int | None = None) -> dict:
     """
-    Returns a comprehensive statistics snapshot.
+    Returns a comprehensive statistics snapshot scoped to a user.
     Called by stats_routes.py GET /stats/
     """
-    memories = db.query(Memory).all()
-    goals    = db.query(Goal).all()
+    mem_query = db.query(Memory)
+    goal_query = db.query(Goal)
+    if user_id is not None:
+        mem_query = mem_query.filter(Memory.user_id == user_id)
+        goal_query = goal_query.filter(Goal.user_id == user_id)
+
+    memories = mem_query.all()
+    goals    = goal_query.all()
     edges    = db.query(GoalMemory).count()
 
     # File type breakdown

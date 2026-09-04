@@ -987,6 +987,7 @@ def chat_with_memories(
     query: str,
     db: Session,
     conversation_history: list[dict] | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """
     Execute the CogniSphere RAG chat pipeline.
@@ -1022,6 +1023,7 @@ def chat_with_memories(
             query=query,
             db=db,
             top_k=2,
+            user_id=user_id,
         )
     except Exception as e:
         print("[Chat] ACMA search error:", e)

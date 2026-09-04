@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/routes/memory_routes.py
 ============================
 Memory CRUD endpoints.
@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from database.database import get_db, SessionLocal
 from app.services.memory_service import list_memories, get_memory, remove_memory
 from app.services.goal_service import get_goals_for_memory
+from app.models.user import User
+from app.auth.deps import get_optional_current_user
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 
@@ -35,26 +37,36 @@ class ImportanceUpdate(BaseModel):
     importance_score: float
 
 
-# â”€â”€ Read endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Read endpoints ───────────────────────────────────────────────────────────
 
 @router.get("/")
-def get_memories():
-    return list_memories()
+def get_memories(current_user: Optional[User] = Depends(get_optional_current_user)):
+    user_id = current_user.id if current_user else None
+    return list_memories(user_id=user_id)
 
 
 @router.get("/{memory_id}")
-def get_memory_detail(memory_id: int, db: Session = Depends(get_db)):
-    mem = get_memory(memory_id)
+def get_memory_detail(
+    memory_id: int,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    user_id = current_user.id if current_user else None
+    mem = get_memory(memory_id, user_id=user_id)
     if not mem:
         raise HTTPException(status_code=404, detail="Memory not found")
     mem["goals"] = get_goals_for_memory(db, memory_id)
     return mem
 
 
-# â”€â”€ Create endpoint (manual / controlled experiment) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Create endpoint (manual / controlled experiment) ──────────────────────────
 
 @router.post("/")
-def create_memory(payload: MemoryCreate, db: Session = Depends(get_db)):
+def create_memory(
+    payload: MemoryCreate,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Manually create a text memory without uploading a file.
     Used for controlled experiments (e.g., inject 'I prefer Python for backend').
@@ -64,7 +76,9 @@ def create_memory(payload: MemoryCreate, db: Session = Depends(get_db)):
     - Importance score
     - Embedding generated âœ“
     - FAISS indexed âœ“
-    - BM25 indexed âœ“
+    - Embedding generated ✓
+    - FAISS indexed ✓
+    - BM25 indexed ✓
     """
     from app.models.memory import Memory
     from ai.embedding_service import get_embedding
@@ -78,10 +92,11 @@ def create_memory(payload: MemoryCreate, db: Session = Depends(get_db)):
     embedding_vector   = get_embedding(text_for_embedding)
     embedding_json     = json.dumps(embedding_vector) if embedding_vector else "[]"
 
-    # Compute importance â€” use provided value (for manual control in experiments)
+    # Compute importance — use provided value (for manual control in experiments)
     importance = max(0.0, min(1.0, payload.importance_score or 0.5))
 
     # Persist to DB
+    user_id = current_user.id if current_user else None
     mem = Memory(
         title            = payload.title,
         description      = payload.description,
@@ -96,6 +111,7 @@ def create_memory(payload: MemoryCreate, db: Session = Depends(get_db)):
         access_count     = 0,
         version          = 1,
         parent_id        = None,
+        user_id          = user_id,
     )
     db.add(mem)
     db.commit()
@@ -104,12 +120,12 @@ def create_memory(payload: MemoryCreate, db: Session = Depends(get_db)):
     # Rebuild FAISS + BM25 indices so new memory is searchable immediately
     _refresh_after_change()
 
-    # Run contradiction check against existing memories (non-blocking â€” just info)
+    # Run contradiction check against existing memories (non-blocking — just info)
     conflict_info = None
     try:
         from ai.contradiction_detector import scan_for_contradictions
         from app.services.database_service import get_all_memories
-        all_mems = get_all_memories()
+        all_mems = get_all_memories(user_id=user_id)
         contradictions = scan_for_contradictions(all_mems)
         # Only return contradictions involving this new memory
         my_conflicts = [c for c in contradictions if
@@ -130,13 +146,21 @@ def create_memory(payload: MemoryCreate, db: Session = Depends(get_db)):
     }
 
 
-# â”€â”€ Update importance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Update importance ─────────────────────────────────────────────────────────
 
 @router.patch("/{memory_id}/importance")
-def update_importance(memory_id: int, payload: ImportanceUpdate, db: Session = Depends(get_db)):
+def update_importance(
+    memory_id: int,
+    payload: ImportanceUpdate,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
     """Adjust the importance score of an existing memory (for ablation experiments)."""
     from app.models.memory import Memory as MemModel
-    mem = db.query(MemModel).filter(MemModel.id == memory_id).first()
+    query = db.query(MemModel).filter(MemModel.id == memory_id)
+    if current_user:
+        query = query.filter(MemModel.user_id == current_user.id)
+    mem = query.first()
     if not mem:
         raise HTTPException(status_code=404, detail="Memory not found")
     mem.importance_score = max(0.0, min(1.0, payload.importance_score))
@@ -148,12 +172,16 @@ def update_importance(memory_id: int, payload: ImportanceUpdate, db: Session = D
 # â”€â”€ Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.delete("/{memory_id}")
-def delete_memory_endpoint(memory_id: int):
-    ok = remove_memory(memory_id)
+def delete_memory_endpoint(
+    memory_id: int,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    user_id = current_user.id if current_user else None
+    ok = remove_memory(memory_id, user_id=user_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Memory not found")
 
-    # âœ… Refresh cache and rebuild indices after deletion
+    # Refresh cache and rebuild indices after deletion
     _refresh_after_change()
 
     return {"deleted": memory_id}

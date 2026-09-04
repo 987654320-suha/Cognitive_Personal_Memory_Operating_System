@@ -26,6 +26,7 @@ class SyncDevice(Base):
     last_heartbeat  = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
     last_sync       = Column(String, nullable=True)
     created_at      = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
+    user_id         = Column(Integer, index=True, nullable=True)
 
     def to_dict(self) -> dict:
         try:
@@ -35,6 +36,7 @@ class SyncDevice(Base):
 
         return {
             "id":              self.id,
+            "user_id":         self.user_id,
             "device_id":       self.device_id,
             "device_name":     self.device_name,
             "os_info":         self.os_info,

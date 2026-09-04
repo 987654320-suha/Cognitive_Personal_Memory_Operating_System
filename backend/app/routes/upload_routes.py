@@ -12,13 +12,15 @@ import os
 import time
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, status
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, status, Depends
 from fastapi.responses import JSONResponse
 
 from app.services.storage_service import get_storage
 from app.services.job_service import get_job_manager
 from ai.embedding_service import is_model_loaded, MODEL_NAME
 from ai.memory_pipeline import run_pipeline
+from app.models.user import User
+from app.auth.deps import get_optional_current_user
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -41,30 +43,36 @@ ALLOWED_CONTENT_TYPES = {
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
-def process_upload_job(job_id: str, file_path: str, filename: str) -> None:
+def process_upload_job(
+    job_id: str,
+    file_path: str,
+    filename: str,
+    user_id: Optional[int] = None,
+):
     """
-    Background worker function executed off the main request thread.
-    Parses document, generates embeddings, persists memory, and updates FAISS.
+    Background worker that runs the complete document ingestion pipeline.
+    Executes off the main request thread so the client receives 202 immediately.
+    Updates the JobManager singleton at each stage with granular progress.
     """
     job_mgr = get_job_manager()
     t_start = time.perf_counter()
 
-    print(f"[PROCESS] started job_id={job_id} filename={filename}")
-    job_mgr.update_job(job_id, status="processing", stage="extracting", message="Extracting text and metadata")
-
     try:
+        job_mgr.update_job(job_id, stage="extracting", message="Extracting text content from document")
+        print(f"[PROCESS] started job_id={job_id} filename={filename} user_id={user_id}")
+
         # Step 1: Ingestion pipeline
         print(f"[PROCESS] extracting text from {filename}")
         source_hint = Path(filename).stem.replace("_", " ").title()
-        
+
         job_mgr.update_job(job_id, stage="chunking", message="Chunking text and preparing vector embeddings")
         print(f"[PROCESS] chunks prepared for {filename}")
 
-        job_mgr.update_job(job_id, stage="embedding", message="Generating embeddings with {MODEL_NAME}")
+        job_mgr.update_job(job_id, stage="embedding", message=f"Generating embeddings with {MODEL_NAME}")
         print(f"[PROCESS] generating embeddings for {filename}")
 
-        # Run the full pipeline (OCR/PDF text -> embeddings -> SQLite commit -> FAISS/BM25 update)
-        result = run_pipeline(file_path, source_hint=source_hint, update_index=True)
+        # Run the full pipeline with user_id scoping
+        result = run_pipeline(file_path, source_hint=source_hint, update_index=True, user_id=user_id)
         memory_id = result.get("id")
 
         print(f"[PROCESS] memories created=Memory #{memory_id} for job_id={job_id}")
@@ -111,13 +119,21 @@ def upload_service_status():
 
 
 @router.get("/status/{job_id}")
-def get_upload_job_status(job_id: str):
+def get_upload_job_status(
+    job_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
     """
     Poll the status of an asynchronous document processing job.
-    Returns: status ('processing' | 'completed' | 'failed'), stage, memory_id, and timing.
+    Enforces user isolation: User B cannot view User A's job.
     """
     job = get_job_manager().get_job(job_id)
     if not job:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job '{job_id}' not found or has expired.",
+        )
+    if job.user_id is not None and current_user and job.user_id != current_user.id:
         raise HTTPException(
             status_code=404,
             detail=f"Job '{job_id}' not found or has expired.",
@@ -129,6 +145,7 @@ def get_upload_job_status(job_id: str):
 async def upload_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
     Upload a document or image file.
@@ -168,13 +185,14 @@ async def upload_file(
     file_path = storage.save_file(filename, file_bytes)
     print(f"[UPLOAD] file saved path={file_path}")
 
-    # 2. Create job record
+    # 2. Create job record with user_id
+    user_id = current_user.id if current_user else None
     job_mgr = get_job_manager()
-    job = job_mgr.create_job(filename)
-    print(f"[UPLOAD] job created job_id={job.job_id}")
+    job = job_mgr.create_job(filename, user_id=user_id)
+    print(f"[UPLOAD] job created job_id={job.job_id} user_id={user_id}")
 
     # 3. Enqueue background task
-    background_tasks.add_task(process_upload_job, job.job_id, file_path, filename)
+    background_tasks.add_task(process_upload_job, job.job_id, file_path, filename, user_id)
 
     # 4. Immediately return HTTP 202 Accepted
     return JSONResponse(

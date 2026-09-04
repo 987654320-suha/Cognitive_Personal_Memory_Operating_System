@@ -1,4 +1,4 @@
-﻿# ðŸ“ LOCATION: backend/app/routes/search_routes.py
+# ðŸ“ LOCATION: backend/app/routes/search_routes.py
 """
 search_routes.py  â€” ACCURACY FIX v2
 ======================================
@@ -18,6 +18,8 @@ from typing import Optional
 from database.database import get_db
 from ai.semantic_search import acma_search, semantic_search
 from app.services.search_service import keyword_search
+from app.models.user import User
+from app.auth.deps import get_optional_current_user
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -28,14 +30,12 @@ def search(
     mode:    str = Query("acma", description="acma | fast | semantic | keyword"),
     top_k:   int = Query(12, ge=1, le=100),
     file_type: Optional[str] = Query(None, description="Filter by file type: pdf, jpg, docx..."),
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Search memories using the selected mode.
-    - acma     : Hybrid BM25 + Semantic + Filename â†’ ACMA re-rank [MOST ACCURATE]
-    - fast     : BM25 keyword only [FASTEST, best for exact name searches]
-    - semantic : FAISS vector only [BEST FOR CONCEPT SEARCHES]
-    - keyword  : SQLite LIKE search [SIMPLE FALLBACK]
+    Enforces user isolation: User A cannot see User B's search results.
     """
     if mode == "acma":
         results = acma_search(q, db, top_k=top_k)
@@ -47,6 +47,10 @@ def search(
         results = keyword_search(q, db, top_k=top_k)
     else:
         results = acma_search(q, db, top_k=top_k)
+
+    # Scoped to current authenticated user
+    if current_user:
+        results = [r for r in results if r.get("user_id") == current_user.id]
 
     # File type filter
     if file_type:

@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/models/goal.py
 ==================
 Goal node in the GAMA graph.
@@ -18,10 +18,12 @@ class Goal(Base):
     parent_id   = Column(Integer, ForeignKey("goals.id"), nullable=True)
     status      = Column(String,  default="active")   # active | completed | paused
     progress    = Column(Float,   default=0.0)
+    user_id     = Column(Integer, index=True, nullable=True)
 
     def to_dict(self):
         return {
             "id":          self.id,
+            "user_id":     self.user_id,
             "name":        self.name,
             "description": self.description,
             "parent_id":   self.parent_id,

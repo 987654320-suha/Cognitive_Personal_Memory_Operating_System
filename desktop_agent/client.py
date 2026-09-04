@@ -125,3 +125,20 @@ class BackendClient:
         except Exception as e:
             print(f"[Client] Error sending delete for {relative_path}: {e}")
             return False
+
+    def fetch_authorized_locations(self, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fetches authorized watch locations from /watcher/locations."""
+        try:
+            url = f"{self.base_url}/watcher/locations"
+            headers = {}
+            if user_token:
+                headers["Authorization"] = f"Bearer {user_token}"
+            elif self.config.auth_token:
+                headers["Authorization"] = f"Bearer {self.config.auth_token}"
+            res = self.session.get(url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                return res.json()
+            return []
+        except Exception as e:
+            print(f"[Client] Failed to fetch authorized locations: {e}")
+            return []

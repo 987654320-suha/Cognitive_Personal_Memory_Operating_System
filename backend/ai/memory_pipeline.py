@@ -59,6 +59,7 @@ def run_pipeline(
     file_path: str,
     source_hint: str = None,
     update_index: bool = True,
+    user_id: int | None = None,
 ) -> dict:
     import time
     start_total = time.perf_counter()
@@ -158,9 +159,12 @@ def run_pipeline(
     print(f"[DATABASE INSERT START] Saving {path.name} to DB")
     db = SessionLocal()
     try:
-        existing = db.query(Memory).filter(Memory.source == result["source"]).first()
+        dup_query = db.query(Memory).filter(Memory.source == result["source"])
+        if user_id is not None:
+            dup_query = dup_query.filter(Memory.user_id == user_id)
+        existing = dup_query.first()
         if existing:
-            print(f"[Pipeline] Skipping duplicate: {result['source']}")
+            print(f"[Pipeline] Skipping duplicate: {result['source']} for user={user_id}")
             result["id"] = existing.id
             result["detected_goals"] = []
             return result
@@ -177,6 +181,7 @@ def run_pipeline(
             objects          = json.dumps(result["objects"]),
             importance_score = result["importance_score"],
             access_count     = 0,
+            user_id          = user_id,
         )
         db.add(memory)
         db.commit()

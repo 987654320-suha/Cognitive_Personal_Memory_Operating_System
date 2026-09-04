@@ -11,19 +11,51 @@ import {
 import {
   Settings, Database, Radio, Network, Trash2, RefreshCw,
   Info, Monitor, Folder, Plus, Pause, Play, CheckCircle,
-  Copy, Laptop, HardDrive
+  Copy, Laptop, HardDrive, ShieldCheck, KeyRound, LogOut,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
 
 const API = API_BASE_URL;
 
 export default function SettingsPage() {
+  const { user, logout, changePassword } = useAuth();
   const [rebuilding, setRebuilding] = useState(false);
   const [pairedInfo, setPairedInfo] = useState<any>(null);
 
+  // Change password state
+  const [curPassword, setCurPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changingPass, setChangingPass] = useState(false);
+
   const { data: watcher, refetch: refetchWatcher } = useQuery("watcher-settings", getWatcherStatus);
   const { data: syncOverview, refetch: refetchSync } = useQuery("sync-devices", getSyncDevices, { refetchInterval: 8000 });
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!curPassword || !newPassword) return;
+    if (newPassword.length < 8) {
+      toast.error("New password must be at least 8 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    setChangingPass(true);
+    try {
+      await changePassword(curPassword, newPassword);
+      setCurPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch {
+      // Handled in AuthContext
+    } finally {
+      setChangingPass(false);
+    }
+  };
 
   const handleRebuildIndex = async () => {
     setRebuilding(true);
@@ -136,8 +168,70 @@ export default function SettingsPage() {
         <h1 className="text-xl font-bold text-white flex items-center gap-2">
           <Settings size={20} className="text-brand-400" /> Settings
         </h1>
-        <p className="text-xs text-gray-400 mt-1">Configure CogniSphere memory, desktop synchronization, and search indices.</p>
+        <p className="text-xs text-gray-400 mt-1">Configure CogniSphere memory, account security, and search indices.</p>
       </div>
+
+      {/* ── User Account & Authentication ────────────────────────────────── */}
+      <Section icon={ShieldCheck} title="Account & Security">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-4 border-b border-surface-border">
+            <div>
+              <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Signed in as</p>
+              <p className="text-sm font-semibold text-white mt-0.5">{user?.email || "Authenticated User"}</p>
+            </div>
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/30 transition-all cursor-pointer"
+            >
+              <LogOut size={14} /> Sign Out
+            </button>
+          </div>
+
+          <form onSubmit={handleChangePassword} className="space-y-3 pt-1">
+            <p className="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
+              <KeyRound size={14} className="text-brand-400" /> Change Password
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <input
+                  type="password"
+                  placeholder="Current password"
+                  value={curPassword}
+                  onChange={(e) => setCurPassword(e.target.value)}
+                  className="w-full bg-surface border border-surface-border rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+              <div>
+                <input
+                  type="password"
+                  placeholder="New password (min 8)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full bg-surface border border-surface-border rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+              <div>
+                <input
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full bg-surface border border-surface-border rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={changingPass || !curPassword || !newPassword}
+                className="btn-primary text-xs py-1.5 px-3 disabled:opacity-50"
+              >
+                {changingPass ? "Updating..." : "Update Password"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </Section>
 
       {/* ── Desktop Sync & Connected Computers ─────────────────────────── */}
       <Section icon={Laptop} title="Connected Computer (Desktop Agent)">

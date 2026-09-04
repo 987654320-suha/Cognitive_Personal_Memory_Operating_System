@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/routes/goal_routes.py
 ==========================
 Goal graph CRUD and progress reporting endpoints.
@@ -15,6 +15,9 @@ from app.services.goal_service import (
     update_goal_status, delete_goal, get_goals_for_memory,
 )
 
+from app.models.user import User
+from app.auth.deps import get_optional_current_user
+
 router = APIRouter(prefix="/goals", tags=["goals"])
 
 
@@ -29,17 +32,30 @@ class GoalStatusUpdate(BaseModel):
 
 
 @router.get("/")
-def list_goals(db: Session = Depends(get_db)):
-    return get_all_goals(db)
+def list_goals(
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    user_id = current_user.id if current_user else None
+    return get_all_goals(db, user_id=user_id)
 
 
 @router.post("/")
-def add_goal(payload: GoalCreate, db: Session = Depends(get_db)):
-    return create_goal(db, payload.name, payload.description, payload.parent_id)
+def add_goal(
+    payload: GoalCreate,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    user_id = current_user.id if current_user else None
+    return create_goal(db, payload.name, payload.description, payload.parent_id, user_id=user_id)
 
 
 @router.get("/{goal_id}/progress")
-def goal_progress(goal_id: int, db: Session = Depends(get_db)):
+def goal_progress(
+    goal_id: int,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Returns goal completion report with present memories and inferred missing docs.
     This is the Explainable AI endpoint.
@@ -51,16 +67,27 @@ def goal_progress(goal_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{goal_id}/status")
-def set_goal_status(goal_id: int, payload: GoalStatusUpdate, db: Session = Depends(get_db)):
-    result = update_goal_status(db, goal_id, payload.status)
+def set_goal_status(
+    goal_id: int,
+    payload: GoalStatusUpdate,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    user_id = current_user.id if current_user else None
+    result = update_goal_status(db, goal_id, payload.status, user_id=user_id)
     if not result:
         raise HTTPException(status_code=404, detail="Goal not found")
     return result
 
 
 @router.delete("/{goal_id}")
-def remove_goal(goal_id: int, db: Session = Depends(get_db)):
-    ok = delete_goal(db, goal_id)
+def remove_goal(
+    goal_id: int,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    user_id = current_user.id if current_user else None
+    ok = delete_goal(db, goal_id, user_id=user_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Goal not found")
     return {"deleted": goal_id}

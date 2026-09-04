@@ -19,7 +19,72 @@ export const API_BASE_URL = rawBase.replace(/\/+$/, "");
 export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 120000,
+  withCredentials: true,
 });
+
+let _inMemoryToken: string | null = null;
+
+export const setAuthToken = (token: string | null) => {
+  _inMemoryToken = token;
+};
+
+export const getAuthToken = () => _inMemoryToken;
+
+api.interceptors.request.use((config) => {
+  if (_inMemoryToken && !config.headers.Authorization) {
+    config.headers.Authorization = `Bearer ${_inMemoryToken}`;
+  }
+  return config;
+});
+
+// ── Auth Types & Methods ──────────────────────────────────────────────────────
+
+export interface UserProfile {
+  id:          number;
+  email:       string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AuthResponse {
+  status:  string;
+  message: string;
+  user:    UserProfile;
+  token:   string;
+}
+
+export const registerUser = async (email: string, password: string): Promise<AuthResponse> => {
+  const res = await api.post<AuthResponse>("/auth/register", { email, password });
+  if (res.data.token) setAuthToken(res.data.token);
+  return res.data;
+};
+
+export const loginUser = async (email: string, password: string): Promise<AuthResponse> => {
+  const res = await api.post<AuthResponse>("/auth/login", { email, password });
+  if (res.data.token) setAuthToken(res.data.token);
+  return res.data;
+};
+
+export const logoutUser = async (): Promise<void> => {
+  try {
+    await api.post("/auth/logout");
+  } finally {
+    setAuthToken(null);
+  }
+};
+
+export const getMe = async (): Promise<UserProfile> => {
+  const res = await api.get<UserProfile>("/auth/me");
+  return res.data;
+};
+
+export const changeUserPassword = async (currentPassword: string, newPassword: string) => {
+  const res = await api.post("/auth/change-password", {
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
+  return res.data;
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -338,9 +403,33 @@ export const getContradictions = () => api.get("/contradictions/").then(r => r.d
 
 // ── Watcher ───────────────────────────────────────────────────────────────────
 
-export const getWatcherStatus = () => api.get("/watcher/status").then(r => r.data);
-export const startWatcher     = () => api.post("/watcher/start").then(r => r.data);
-export const stopWatcher      = () => api.post("/watcher/stop").then(r => r.data);
+export interface WatcherLocation {
+  id:                 number;
+  user_id:            number;
+  path:               string;
+  display_name:       string;
+  location_type:      string;  // standard | custom | drive
+  permission_status:  string;  // granted | pending | revoked | denied
+  enabled:            boolean;
+  created_at?:        string;
+  updated_at?:        string;
+  last_scan_at?:      string | null;
+}
+
+export const getWatcherStatus    = () => api.get("/watcher/status").then(r => r.data);
+export const startWatcher        = () => api.post("/watcher/start").then(r => r.data);
+export const stopWatcher         = () => api.post("/watcher/stop").then(r => r.data);
+export const getWatcherLocations = () => api.get<WatcherLocation[]>("/watcher/locations").then(r => r.data);
+export const addWatcherLocation  = (payload: { path: string; display_name: string; location_type?: string; permission_status?: string; enabled?: boolean }) =>
+  api.post<WatcherLocation>("/watcher/locations", payload).then(r => r.data);
+export const updateWatcherLocation = (id: number, payload: Partial<WatcherLocation>) =>
+  api.patch<WatcherLocation>(`/watcher/locations/${id}`, payload).then(r => r.data);
+export const deleteWatcherLocation = (id: number) =>
+  api.delete(`/watcher/locations/${id}`).then(r => r.data);
+export const pauseWatcherLocation  = (id: number) =>
+  api.post<WatcherLocation>(`/watcher/locations/${id}/pause`).then(r => r.data);
+export const resumeWatcherLocation = (id: number) =>
+  api.post<WatcherLocation>(`/watcher/locations/${id}/resume`).then(r => r.data);
 
 // ── Decay ─────────────────────────────────────────────────────────────────────
 

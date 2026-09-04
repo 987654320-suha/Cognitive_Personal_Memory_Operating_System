@@ -14,11 +14,12 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
-from database.database import engine, Base, DATABASE_URL, is_sqlite
+from database.database import engine, Base, DATABASE_URL, is_sqlite, get_db
 
 from app.models.memory         import Memory
 from app.models.goal           import Goal
@@ -50,6 +51,7 @@ from app.routes.decay_routes          import router as decay_router
 from app.routes.memory_update_routes  import router as memory_update_router
 from app.routes.experiment_routes     import router as experiment_router
 from app.routes.sync_routes           import router as sync_router
+from app.routes.auth_routes           import router as auth_router
 
 
 # ── App setup ─────────────────────────────────────────────────────────────────
@@ -109,7 +111,7 @@ for router in [
     import_router, graph_router, contradiction_router,
     trajectory_router, decay_router,
     memory_update_router, experiment_router,
-    sync_router,
+    sync_router, auth_router,
 ]:
     app.include_router(router)
 
@@ -190,12 +192,17 @@ def recent_alias(limit: int = 20):
 
 
 @app.get("/status/{job_id}", tags=["upload"])
-def job_status_root_alias(job_id: str):
-    """Root-level alias for polling upload jobs: /status/{job_id}."""
+def job_status_root_alias(job_id: str, request: Request, db: Session = Depends(get_db)):
+    """Root-level alias for polling upload jobs: /status/{job_id} with user isolation."""
     from app.services.job_service import get_job_manager
+    from app.auth.deps import get_optional_current_user
     from fastapi import HTTPException
     job = get_job_manager().get_job(job_id)
     if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
+    
+    current_user = get_optional_current_user(request, db)
+    if job.user_id is not None and current_user and job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
     return job.to_dict()
 
@@ -235,7 +242,44 @@ def _run_sqlite_migrations():
         except (sqlite3.OperationalError, Exception):
             pass  # Column already exists
 
+        # Add user_id column to memories
+        try:
+            cur.execute("ALTER TABLE memories ADD COLUMN user_id INTEGER")
+            print("[Migration] Added 'user_id' column to memories.")
+        except (sqlite3.OperationalError, Exception):
+            pass
+
+        # Add user_id column to goals
+        try:
+            cur.execute("ALTER TABLE goals ADD COLUMN user_id INTEGER")
+            print("[Migration] Added 'user_id' column to goals.")
+        except (sqlite3.OperationalError, Exception):
+            pass
+
+        # Add user_id column to sync_devices
+        try:
+            cur.execute("ALTER TABLE sync_devices ADD COLUMN user_id INTEGER")
+            print("[Migration] Added 'user_id' column to sync_devices.")
+        except (sqlite3.OperationalError, Exception):
+            pass
+
+        # Add user_id column to indexed_files
+        try:
+            cur.execute("ALTER TABLE indexed_files ADD COLUMN user_id INTEGER")
+            print("[Migration] Added 'user_id' column to indexed_files.")
+        except (sqlite3.OperationalError, Exception):
+            pass
+
         conn.commit()
         conn.close()
     except Exception as e:
         print(f"[Migration] SQLite migration notice: {e}")
+
+
+# Run initial table creation & migrations on import so test runners & TestClient have valid schema
+try:
+    Base.metadata.create_all(bind=engine)
+    if is_sqlite:
+        _run_sqlite_migrations()
+except Exception as _e:
+    print(f"[CogniSphere] Schema initialization notice: {_e}")

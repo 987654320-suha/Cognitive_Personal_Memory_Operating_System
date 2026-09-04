@@ -1,4 +1,4 @@
-﻿"""
+"""
 database_service.py
 ===================
 Enterprise in-memory memory cache.
@@ -39,9 +39,9 @@ def refresh_memory_cache() -> None:
     load_memory_cache()
 
 
-def get_all_memories() -> list[dict]:
+def get_all_memories(user_id: int | None = None) -> list[dict]:
     """
-    Returns cached memories.
+    Returns cached memories, optionally scoped to a specific user.
     Falls back to loading if cache isn't ready.
     """
     global _cache_loaded
@@ -49,10 +49,13 @@ def get_all_memories() -> list[dict]:
     if not _cache_loaded:
         load_memory_cache()
 
+    if user_id is not None:
+        return [m for m in _memory_cache if m.get("user_id") == user_id]
+
     return _memory_cache
 
 
-def get_memory_by_id(memory_id: int) -> dict | None:
+def get_memory_by_id(memory_id: int, user_id: int | None = None) -> dict | None:
     global _cache_loaded
 
     if not _cache_loaded:
@@ -60,16 +63,21 @@ def get_memory_by_id(memory_id: int) -> dict | None:
 
     for mem in _memory_cache:
         if mem["id"] == memory_id:
+            if user_id is not None and mem.get("user_id") != user_id:
+                return None
             return mem
 
     return None
 
 
-def delete_memory(memory_id: int) -> bool:
+def delete_memory(memory_id: int, user_id: int | None = None) -> bool:
     db = SessionLocal()
 
     try:
-        mem = db.query(Memory).filter(Memory.id == memory_id).first()
+        query = db.query(Memory).filter(Memory.id == memory_id)
+        if user_id is not None:
+            query = query.filter(Memory.user_id == user_id)
+        mem = query.first()
 
         if mem is None:
             return False
