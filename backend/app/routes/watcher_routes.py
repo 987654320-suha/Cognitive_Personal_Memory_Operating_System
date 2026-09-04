@@ -43,10 +43,11 @@ class LocationUpdate(BaseModel):
 def _get_standard_defaults() -> list[dict]:
     home = Path.home()
     candidates = [
+        {"name": "Desktop",   "path": str(home / "Desktop")},
         {"name": "Documents", "path": str(home / "Documents")},
         {"name": "Downloads", "path": str(home / "Downloads")},
         {"name": "Pictures",  "path": str(home / "Pictures")},
-        {"name": "Desktop",   "path": str(home / "Desktop")},
+        {"name": "Videos",    "path": str(home / "Videos")},
     ]
     return candidates
 

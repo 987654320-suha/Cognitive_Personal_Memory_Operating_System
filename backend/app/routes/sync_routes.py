@@ -18,14 +18,19 @@ from database.database import get_db
 from app.services import sync_service
 from app.models.sync_device import SyncDevice
 
+from app.models.user import User
+from app.auth.deps import get_optional_current_user
+
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 
 # ── Pydantic Request Models ───────────────────────────────────────────────────
 
 class PairRequest(BaseModel):
-    device_name: str = "Windows PC"
-    os_info: str = "Windows"
+    device_name: Optional[str] = "Windows PC"
+    os_info: Optional[str] = "Windows"
+    pairing_code: Optional[str] = None
+    auth_token: Optional[str] = None
 
 
 class HeartbeatRequest(BaseModel):
@@ -62,33 +67,133 @@ def authenticate_agent(device_id: str, auth_token: str, db: Session) -> SyncDevi
 @router.post("/pair")
 def pair_desktop_agent(
     payload: PairRequest,
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Pairs a new Desktop Agent and returns device credentials.
+    Pairs a new Desktop Agent or generates a pairing code for a logged-in user.
     """
+    import random
+    import string
+    from datetime import datetime, timezone
+
+    # 1. Desktop agent pairing using a pre-generated pairing code
+    if payload.pairing_code:
+        code_clean = payload.pairing_code.strip().upper()
+        device = (
+            db.query(SyncDevice)
+            .filter(SyncDevice.pairing_code == code_clean)
+            .first()
+        )
+        if not device:
+            raise HTTPException(
+                status_code=404,
+                detail="Invalid or expired pairing code. Please generate a new code from CogniSphere Web.",
+            )
+
+        device.device_name = payload.device_name or device.device_name
+        device.os_info = payload.os_info or device.os_info
+        device.status = "connected"
+        device.last_heartbeat = datetime.now(timezone.utc).isoformat()
+        db.commit()
+        db.refresh(device)
+
+        return {
+            "device_id":    device.device_id,
+            "device_name":  device.device_name,
+            "auth_token":   device.auth_token,
+            "status":       device.status,
+            "user_id":      device.user_id,
+            "pairing_code": device.pairing_code,
+        }
+
+    # 2. Logged-in user requesting a secure pairing code from web interface
+    if current_user:
+        chars = string.ascii_uppercase + string.digits
+        rand_suffix = "".join(random.choices(chars, k=5))
+        pairing_code = f"COG-{rand_suffix}"
+
+        return sync_service.pair_device(
+            device_name=payload.device_name or "Windows PC",
+            os_info=payload.os_info or "Windows",
+            user_id=current_user.id,
+            pairing_code=pairing_code,
+            status="pending_pairing",
+            db=db,
+        )
+
+    # 3. Unauthenticated / direct fallback pairing (e.g. testing)
     return sync_service.pair_device(
-        device_name=payload.device_name,
-        os_info=payload.os_info,
+        device_name=payload.device_name or "Windows PC",
+        os_info=payload.os_info or "Windows",
         db=db,
     )
 
 
 @router.get("/devices")
-def list_paired_devices(db: Session = Depends(get_db)):
-    """Lists all paired desktop devices with status and folder counts."""
-    return sync_service.get_sync_overview(db)
+def list_paired_devices(
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """Lists paired desktop devices scoped to the authenticated user."""
+    user_id = current_user.id if current_user else None
+    return sync_service.get_sync_overview(db, user_id=user_id)
 
 
 @router.delete("/devices/{device_id}")
-def unpair_device(device_id: str, db: Session = Depends(get_db)):
+def unpair_device(
+    device_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
     """Unpairs/disconnects a desktop device."""
-    device = db.query(SyncDevice).filter(SyncDevice.device_id == device_id).first()
+    query = db.query(SyncDevice).filter(SyncDevice.device_id == device_id)
+    if current_user:
+        query = query.filter(SyncDevice.user_id == current_user.id)
+    device = query.first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     db.delete(device)
     db.commit()
     return {"success": True, "message": f"Device {device_id} disconnected."}
+
+
+@router.post("/devices/{device_id}/pause")
+def pause_device(
+    device_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """Pauses synchronization on the target desktop device."""
+    query = db.query(SyncDevice).filter(SyncDevice.device_id == device_id)
+    if current_user:
+        query = query.filter(SyncDevice.user_id == current_user.id)
+    device = query.first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    device.status = "paused"
+    db.commit()
+    db.refresh(device)
+    return {"success": True, "device": device.to_dict()}
+
+
+@router.post("/devices/{device_id}/resume")
+def resume_device(
+    device_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """Resumes synchronization on the target desktop device."""
+    query = db.query(SyncDevice).filter(SyncDevice.device_id == device_id)
+    if current_user:
+        query = query.filter(SyncDevice.user_id == current_user.id)
+    device = query.first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    device.status = "watching"
+    db.commit()
+    db.refresh(device)
+    return {"success": True, "device": device.to_dict()}
 
 
 @router.post("/heartbeat")
@@ -175,6 +280,10 @@ def delete_file(
 
 
 @router.get("/status")
-def sync_status(db: Session = Depends(get_db)):
+def sync_status(
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
     """General sync status endpoint for frontend dashboard & settings."""
-    return sync_service.get_sync_overview(db)
+    user_id = current_user.id if current_user else None
+    return sync_service.get_sync_overview(db, user_id=user_id)

@@ -11,6 +11,7 @@ Tests:
 """
 
 import io
+import time
 import hashlib
 import pytest
 from fastapi.testclient import TestClient
@@ -73,8 +74,8 @@ def test_file_sync_and_deduplication():
     device_id = pair_res["device_id"]
     auth_token = pair_res["auth_token"]
 
-    # Sample file content
-    content = b"Cognitive Personal Memory Operating System sync test notes."
+    # Sample file content with unique run token
+    content = f"Cognitive Personal Memory Operating System sync test notes {time.time()}.".encode()
     file_hash = hashlib.sha256(content).hexdigest()
 
     # 2. Sync first file

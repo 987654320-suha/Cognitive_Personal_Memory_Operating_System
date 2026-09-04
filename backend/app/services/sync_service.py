@@ -30,10 +30,13 @@ from ai.hybrid_search import build_bm25
 def pair_device(
     device_name: str,
     os_info: str = "Windows",
+    user_id: Optional[int] = None,
+    pairing_code: Optional[str] = None,
+    status: str = "connected",
     db: Session = None,
 ) -> dict:
     """
-    Registers a new desktop device and issues a secure pairing token.
+    Registers a new desktop device and issues a secure pairing token or pairing code.
     """
     device_id = str(uuid.uuid4())
     auth_token = f"cs_{secrets.token_urlsafe(32)}"
@@ -44,22 +47,26 @@ def pair_device(
         device_name=device_name or "Windows PC",
         os_info=os_info or "Windows",
         auth_token=auth_token,
-        status="connected",
+        status=status,
         watched_folders=json.dumps([]),
         last_heartbeat=now,
         last_sync=None,
         created_at=now,
+        user_id=user_id,
+        pairing_code=pairing_code,
     )
     db.add(device)
     db.commit()
     db.refresh(device)
 
-    print(f"[SyncService] Paired new device: {device.device_name} ({device_id})")
+    print(f"[SyncService] Paired/registered device: {device.device_name} ({device_id}) [user={user_id}]")
     return {
-        "device_id":   device.device_id,
-        "device_name": device.device_name,
-        "auth_token":  auth_token,
-        "status":      device.status,
+        "device_id":    device.device_id,
+        "device_name":  device.device_name,
+        "auth_token":   auth_token,
+        "status":       device.status,
+        "pairing_code": device.pairing_code,
+        "user_id":      device.user_id,
     }
 
 
@@ -107,18 +114,26 @@ def sync_file_record(
     Syncs a file from desktop agent with SHA-256 deduplication and pipeline ingestion.
     """
     now = datetime.now(timezone.utc).isoformat()
+    device = db.query(SyncDevice).filter(SyncDevice.device_id == device_id).first()
+    user_id = device.user_id if device else None
 
     # 1. Content-based Deduplication Check (PHASE 8)
-    # Check if identical content hash already exists with an active memory
-    existing_file = db.query(IndexedFile).filter(
+    # Check if identical content hash already exists with an active memory for this user
+    dedup_query = db.query(IndexedFile).filter(
         IndexedFile.sha256_hash == sha256_hash,
         IndexedFile.is_deleted == False,
         IndexedFile.memory_id.isnot(None),
-    ).first()
+    )
+    if user_id is not None:
+        dedup_query = dedup_query.filter(IndexedFile.user_id == user_id)
+    existing_file = dedup_query.first()
 
     if existing_file and existing_file.memory_id:
         # Check that the memory actually exists
-        existing_memory = db.query(Memory).filter(Memory.id == existing_file.memory_id).first()
+        mem_query = db.query(Memory).filter(Memory.id == existing_file.memory_id)
+        if user_id is not None:
+            mem_query = mem_query.filter(Memory.user_id == user_id)
+        existing_memory = mem_query.first()
         if existing_memory:
             # Re-use existing memory without redundant heavy AI parsing/embedding!
             record = db.query(IndexedFile).filter(
@@ -140,6 +155,7 @@ def sync_file_record(
                     sync_status="synced",
                     memory_id=existing_memory.id,
                     is_deleted=False,
+                    user_id=user_id,
                 )
                 db.add(record)
             else:
@@ -150,10 +166,14 @@ def sync_file_record(
                 record.sync_status = "synced"
                 record.memory_id = existing_memory.id
                 record.is_deleted = False
+                record.user_id = user_id
+
+            if device:
+                device.last_sync = now
 
             db.commit()
             db.refresh(record)
-            print(f"[SyncService] Deduplicated file {filename} (reused memory #{existing_memory.id})")
+            print(f"[SyncService] Deduplicated file {filename} (reused memory #{existing_memory.id}) [user={user_id}]")
             return {
                 "success": True,
                 "file_id": record.id,
@@ -164,13 +184,13 @@ def sync_file_record(
 
     # 2. Ingest through existing CogniSphere Pipeline
     try:
-        memory_dict = ingest_uploaded_file(file_bytes, filename)
+        memory_dict = ingest_uploaded_file(file_bytes, filename, user_id=user_id)
         memory_id = memory_dict.get("id")
 
         # Refresh in-memory cache and indices
         try:
             refresh_memory_cache()
-            memories = get_all_memories()
+            memories = get_all_memories(user_id=user_id)
             if memories:
                 build_index(memories)
                 build_bm25(memories)
@@ -197,6 +217,7 @@ def sync_file_record(
                 sync_status="synced",
                 memory_id=memory_id,
                 is_deleted=False,
+                user_id=user_id,
             )
             db.add(record)
         else:
@@ -207,16 +228,16 @@ def sync_file_record(
             record.sync_status = "synced"
             record.memory_id = memory_id
             record.is_deleted = False
+            record.user_id = user_id
 
         # Update device last_sync
-        device = db.query(SyncDevice).filter(SyncDevice.device_id == device_id).first()
         if device:
             device.last_sync = now
 
         db.commit()
         db.refresh(record)
 
-        print(f"[SyncService] Successfully synced {filename} (Memory #{memory_id})")
+        print(f"[SyncService] Successfully synced {filename} (Memory #{memory_id}) [user={user_id}]")
         return {
             "success": True,
             "file_id": record.id,
@@ -271,7 +292,7 @@ def delete_file_record(device_id: str, relative_path: str, db: Session) -> dict:
 
     if deleted_memory:
         refresh_memory_cache()
-        memories = get_all_memories()
+        memories = get_all_memories(user_id=record.user_id)
         if memories:
             build_index(memories)
             build_bm25(memories)
@@ -284,12 +305,20 @@ def delete_file_record(device_id: str, relative_path: str, db: Session) -> dict:
     }
 
 
-def get_sync_overview(db: Session) -> dict:
-    """Returns overview statistics for desktop sync."""
-    devices = db.query(SyncDevice).all()
-    total_files = db.query(IndexedFile).filter(IndexedFile.is_deleted == False).count()
+def get_sync_overview(db: Session, user_id: Optional[int] = None) -> dict:
+    """Returns overview statistics for desktop sync scoped to the given user if provided."""
+    dev_query = db.query(SyncDevice)
+    file_query = db.query(IndexedFile).filter(IndexedFile.is_deleted == False)
+
+    if user_id is not None:
+        dev_query = dev_query.filter(SyncDevice.user_id == user_id)
+        file_query = file_query.filter(IndexedFile.user_id == user_id)
+
+    devices = dev_query.all()
+    total_files = file_query.count()
 
     device_list = []
+    now_dt = datetime.now(timezone.utc)
     for d in devices:
         d_dict = d.to_dict()
         file_count = db.query(IndexedFile).filter(
@@ -297,6 +326,27 @@ def get_sync_overview(db: Session) -> dict:
             IndexedFile.is_deleted == False,
         ).count()
         d_dict["indexed_files_count"] = file_count
+
+        # Dynamic status check: if not paused and not pending, check heartbeat age (> 60s -> offline)
+        raw_status = d.status or "connected"
+        if raw_status not in ("paused", "pending_pairing"):
+            if d.last_heartbeat:
+                try:
+                    hb_str = d.last_heartbeat.replace("Z", "+00:00")
+                    hb_dt = datetime.fromisoformat(hb_str)
+                    if hb_dt.tzinfo is None:
+                        hb_dt = hb_dt.replace(tzinfo=timezone.utc)
+                    if (now_dt - hb_dt).total_seconds() > 60:
+                        d_dict["status"] = "offline"
+                    else:
+                        d_dict["status"] = raw_status
+                except Exception:
+                    d_dict["status"] = raw_status
+            else:
+                d_dict["status"] = "offline"
+        else:
+            d_dict["status"] = raw_status
+
         device_list.append(d_dict)
 
     return {

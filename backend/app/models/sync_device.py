@@ -27,6 +27,7 @@ class SyncDevice(Base):
     last_sync       = Column(String, nullable=True)
     created_at      = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
     user_id         = Column(Integer, index=True, nullable=True)
+    pairing_code    = Column(String, index=True, nullable=True)
 
     def to_dict(self) -> dict:
         try:
@@ -41,6 +42,7 @@ class SyncDevice(Base):
             "device_name":     self.device_name,
             "os_info":         self.os_info,
             "status":          self.status,
+            "pairing_code":    self.pairing_code,
             "watched_folders": folders,
             "last_heartbeat":  self.last_heartbeat,
             "last_sync":       self.last_sync,

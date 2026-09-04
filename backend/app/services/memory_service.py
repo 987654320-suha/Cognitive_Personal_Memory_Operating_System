@@ -17,7 +17,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads")).resolve()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def ingest_uploaded_file(file_bytes: bytes, filename: str) -> dict:
+def ingest_uploaded_file(file_bytes: bytes, filename: str, user_id: int | None = None) -> dict:
     """Save upload to disk then run the full pipeline."""
     import time
     t0 = time.perf_counter()
@@ -25,7 +25,7 @@ def ingest_uploaded_file(file_bytes: bytes, filename: str) -> dict:
     dest = UPLOAD_DIR / safe_filename
     dest.write_bytes(file_bytes)
     print(f"[FILE SAVED] {safe_filename} ({len(file_bytes)/1024:.1f} KB) in {time.perf_counter() - t0:.3f}s")
-    return run_pipeline(str(dest), source_hint=Path(safe_filename).stem.replace("_", " ").title())
+    return run_pipeline(str(dest), source_hint=Path(safe_filename).stem.replace("_", " ").title(), user_id=user_id)
 
 
 def list_memories(user_id: int | None = None) -> list[dict]:

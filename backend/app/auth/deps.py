@@ -11,6 +11,7 @@ from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 from database.database import get_db
 from app.models.user import User
+from app.models.sync_device import SyncDevice
 from app.auth.security import decode_access_token
 
 COOKIE_NAME = "access_token"
@@ -55,12 +56,36 @@ def extract_token_from_request(request: Request) -> Optional[str]:
     return None
 
 
+def _resolve_user_from_token(token: str, db: Session) -> Optional[User]:
+    """Helper to resolve a User from either a JWT access token or a paired SyncDevice auth_token."""
+    # 1. Attempt JWT access token decode
+    payload = decode_access_token(token)
+    if payload and "sub" in payload:
+        try:
+            user_id = int(payload["sub"])
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                return user
+        except (ValueError, TypeError):
+            pass
+
+    # 2. Check if this is a paired Desktop Agent device token (e.g. cs_...)
+    device = db.query(SyncDevice).filter(SyncDevice.auth_token == token).first()
+    if device and device.user_id:
+        user = db.query(User).filter(User.id == device.user_id).first()
+        if user:
+            return user
+
+    return None
+
+
 def get_current_user(
     request: Request,
     db: Session = Depends(get_db),
 ) -> User:
     """
     Dependency that enforces authentication.
+    Accepts JWT access tokens or paired desktop agent auth tokens.
     Raises HTTP 401 if token is missing, invalid, or user does not exist.
     """
     token = extract_token_from_request(request)
@@ -71,28 +96,11 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired authentication session.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    try:
-        user_id = int(payload["sub"])
-    except (ValueError, TypeError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication session subject.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _resolve_user_from_token(token, db)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User account no longer exists.",
+            detail="Invalid or expired authentication credentials.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -111,12 +119,4 @@ def get_optional_current_user(
     if not token:
         return None
 
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        return None
-
-    try:
-        user_id = int(payload["sub"])
-        return db.query(User).filter(User.id == user_id).first()
-    except (ValueError, TypeError):
-        return None
+    return _resolve_user_from_token(token, db)

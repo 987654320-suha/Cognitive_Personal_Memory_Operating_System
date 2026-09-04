@@ -41,11 +41,22 @@ class BackendClient:
         except Exception:
             return False
 
-    def pair_device(self, device_name: str, os_info: str) -> Optional[Dict[str, Any]]:
+    def pair_device(
+        self,
+        device_name: str,
+        os_info: str,
+        pairing_code: Optional[str] = None,
+        auth_token: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Pairs with backend /sync/pair and retrieves device_id and auth_token."""
         try:
             url = f"{self.base_url}/sync/pair"
-            payload = {"device_name": device_name, "os_info": os_info}
+            payload: Dict[str, Any] = {"device_name": device_name, "os_info": os_info}
+            if pairing_code:
+                payload["pairing_code"] = pairing_code.strip()
+            if auth_token:
+                payload["auth_token"] = auth_token.strip()
+
             res = self.session.post(url, json=payload, timeout=10)
             if res.status_code == 200:
                 return res.json()

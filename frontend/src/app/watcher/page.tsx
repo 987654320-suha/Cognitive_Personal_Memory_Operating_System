@@ -2,11 +2,11 @@
 "use client";
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "react-query";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   FolderCheck, HardDrive, Folder, Plus, Trash2, Pause, Play,
   ShieldCheck, AlertCircle, RefreshCw, Radio, CheckCircle2,
-  XCircle, Clock, Laptop
+  Clock, Laptop, Terminal, Copy, Check, Power, Monitor
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -18,6 +18,12 @@ import {
   pauseWatcherLocation,
   resumeWatcherLocation,
   deleteWatcherLocation,
+  getSyncDevices,
+  generatePairingCode,
+  unpairDevice,
+  pauseDevice,
+  resumeDevice,
+  SyncDevice,
   WatcherLocation,
 } from "@/services/api";
 
@@ -28,6 +34,14 @@ export default function WatcherPage() {
   const [newType, setNewType] = useState("custom");
   const [isAdding, setIsAdding] = useState(false);
 
+  // Pairing state
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState(false);
+  const [showPairingModal, setShowPairingModal] = useState(false);
+
+  const serverUrl = process.env.NEXT_PUBLIC_API_URL || "https://cognisphere-backend-ya2y.onrender.com";
+
   // Queries
   const { data: status, refetch: refetchStatus } = useQuery("watcher-status", getWatcherStatus, {
     refetchInterval: 5000,
@@ -36,6 +50,69 @@ export default function WatcherPage() {
   const { data: locations = [], isLoading: loadingLocations } = useQuery(
     "watcher-locations",
     getWatcherLocations
+  );
+
+  const { data: syncOverview, refetch: refetchDevices } = useQuery(
+    "sync-devices",
+    getSyncDevices,
+    {
+      refetchInterval: 4000,
+    }
+  );
+
+  const devices: SyncDevice[] = syncOverview?.devices || [];
+  const activeConnectedDevices = devices.filter((d) => d.status !== "pending_pairing");
+
+  // Pair code generation mutation
+  const pairMutation = useMutation(
+    async () => {
+      const res = await generatePairingCode("Windows PC", "Windows");
+      return res;
+    },
+    {
+      onSuccess: (data) => {
+        if (data.pairing_code) {
+          setPairingCode(data.pairing_code);
+          setShowPairingModal(true);
+          toast.success("Pairing code generated!");
+        }
+        queryClient.invalidateQueries("sync-devices");
+      },
+      onError: (err: any) => {
+        toast.error(err?.response?.data?.detail || "Failed to generate pairing code");
+      },
+    }
+  );
+
+  // Device Pause/Resume/Unpair mutations
+  const pauseDeviceMutation = useMutation(
+    async (deviceId: string) => await pauseDevice(deviceId),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries("sync-devices");
+        toast.success("Device synchronization paused");
+      },
+    }
+  );
+
+  const resumeDeviceMutation = useMutation(
+    async (deviceId: string) => await resumeDevice(deviceId),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries("sync-devices");
+        toast.success("Device synchronization resumed");
+      },
+    }
+  );
+
+  const unpairDeviceMutation = useMutation(
+    async (deviceId: string) => await unpairDevice(deviceId),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries("sync-devices");
+        toast.success("Device disconnected and unpaired");
+      },
+    }
   );
 
   // Toggle watcher mutation
@@ -121,6 +198,53 @@ export default function WatcherPage() {
   const standardLocations = locations.filter((loc) => loc.location_type === "standard");
   const customLocations = locations.filter((loc) => loc.location_type !== "standard");
 
+  const copyToClipboard = (text: string, type: "code" | "cmd") => {
+    navigator.clipboard.writeText(text);
+    if (type === "code") {
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    } else {
+      setCopiedCmd(true);
+      setTimeout(() => setCopiedCmd(false), 2000);
+    }
+    toast.success("Copied to clipboard!");
+  };
+
+  const getStatusBadge = (devStatus: string) => {
+    switch (devStatus.toLowerCase()) {
+      case "watching":
+        return (
+          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Watching
+          </span>
+        );
+      case "connected":
+        return (
+          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            <CheckCircle2 size={12} className="text-emerald-400" />
+            Connected
+          </span>
+        );
+      case "paused":
+        return (
+          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+            <Pause size={12} className="text-amber-400" />
+            Paused
+          </span>
+        );
+      case "offline":
+      case "disconnected":
+      default:
+        return (
+          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-500/15 text-gray-400 border border-gray-500/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+            Offline
+          </span>
+        );
+    }
+  };
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* ── Page Header ───────────────────────────────────────────── */}
@@ -130,22 +254,239 @@ export default function WatcherPage() {
             <FolderCheck size={22} className="text-brand-400" /> Desktop Watcher & Folder Permissions
           </h1>
           <p className="text-xs text-gray-400 mt-1">
-            Explicitly authorize local drives and directories for continuous cognitive synchronization.
+            Connect your Windows computer and explicitly authorize local folders for cognitive sync.
           </p>
         </div>
 
-        <button
-          onClick={() => toggleWatcherMutation.mutate()}
-          disabled={toggleWatcherMutation.isLoading}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-            status?.running
-              ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30"
-              : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
-          }`}
-        >
-          <Radio size={14} className={status?.running ? "animate-pulse text-emerald-400" : "text-gray-400"} />
-          {status?.running ? "Stop Watcher" : "Start Watcher"}
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => pairMutation.mutate()}
+            disabled={pairMutation.isLoading}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/40 hover:bg-brand-500/30 transition-all cursor-pointer shadow-sm"
+          >
+            <Laptop size={14} />
+            Connect Your Computer
+          </button>
+
+          <button
+            onClick={() => toggleWatcherMutation.mutate()}
+            disabled={toggleWatcherMutation.isLoading}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              status?.running
+                ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30"
+                : "bg-surface text-gray-400 border border-surface-border hover:bg-surface-hover"
+            }`}
+          >
+            <Radio size={14} className={status?.running ? "animate-pulse text-emerald-400" : "text-gray-500"} />
+            {status?.running ? "Stop Backend Watcher" : "Backend Watcher Idle"}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Pairing Instructions Modal / Card ────────────────────────── */}
+      <AnimatePresence>
+        {(showPairingModal || pairingCode) && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="bg-gradient-to-br from-[#181832] to-[#121224] border border-brand-500/40 rounded-2xl p-5 shadow-xl relative overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 p-4">
+              <button
+                onClick={() => {
+                  setShowPairingModal(false);
+                  setPairingCode(null);
+                }}
+                className="text-gray-400 hover:text-white text-xs font-semibold px-2 py-1 rounded bg-surface border border-surface-border cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-4 max-w-2xl">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-brand-500/20 text-brand-300 flex items-center justify-center">
+                  <Laptop size={18} />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-white">Connect Your Computer</h2>
+                  <p className="text-xs text-gray-400">
+                    Pair your Windows desktop agent with this CogniSphere account.
+                  </p>
+                </div>
+              </div>
+
+              {/* Pairing Code Display */}
+              {pairingCode && (
+                <div className="bg-surface/80 border border-brand-500/30 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">
+                      Secure Pairing Code
+                    </span>
+                    <div className="text-2xl font-mono font-extrabold text-brand-300 tracking-widest mt-0.5">
+                      {pairingCode}
+                    </div>
+                    <span className="text-[10px] text-gray-400">
+                      Waiting for Desktop Agent connection...
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => copyToClipboard(pairingCode, "code")}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-500/20 text-brand-300 hover:bg-brand-500/30 border border-brand-500/40 text-xs font-semibold cursor-pointer transition-all"
+                  >
+                    {copiedCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                    {copiedCode ? "Copied" : "Copy Code"}
+                  </button>
+                </div>
+              )}
+
+              {/* Terminal Instructions */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-gray-200 flex items-center gap-1.5">
+                  <Terminal size={14} className="text-brand-400" /> Run Desktop Agent
+                </p>
+                <div className="bg-[#0b0b14] border border-[#252538] rounded-xl p-3 text-xs font-mono text-gray-300 flex items-center justify-between">
+                  <span className="truncate mr-3">
+                    python desktop_agent/agent.py --server {serverUrl} {pairingCode ? `--pair-code ${pairingCode}` : ""}
+                  </span>
+                  <button
+                    onClick={() =>
+                      copyToClipboard(
+                        `python desktop_agent/agent.py --server ${serverUrl} ${pairingCode ? `--pair-code ${pairingCode}` : ""}`,
+                        "cmd"
+                      )
+                    }
+                    className="shrink-0 p-1.5 text-gray-400 hover:text-white hover:bg-surface rounded transition-colors cursor-pointer"
+                    title="Copy command"
+                  >
+                    {copiedCmd ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Connected Windows Devices ─────────────────────────────────── */}
+      <div className="card p-5 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-surface-border">
+          <div>
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <Monitor size={16} className="text-brand-400" /> Paired Desktop Computers
+            </h2>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              Live status and synchronization telemetry for your connected machines.
+            </p>
+          </div>
+
+          <button
+            onClick={() => refetchDevices()}
+            title="Refresh status"
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-surface-hover rounded-lg transition-colors cursor-pointer"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
+
+        {activeConnectedDevices.length === 0 ? (
+          <div className="text-center py-7 text-gray-400 space-y-2.5">
+            <div className="w-10 h-10 rounded-full bg-surface border border-surface-border flex items-center justify-center mx-auto text-gray-500">
+              <Laptop size={20} />
+            </div>
+            <p className="text-xs">No desktop computers paired yet.</p>
+            <button
+              onClick={() => pairMutation.mutate()}
+              disabled={pairMutation.isLoading}
+              className="btn-primary text-xs py-1.5 px-3.5 inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus size={13} /> Connect Your Computer
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {activeConnectedDevices.map((dev) => (
+              <div
+                key={dev.device_id}
+                className="p-4 rounded-xl bg-surface-card border border-surface-border hover:border-brand-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+              >
+                <div className="flex items-start gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-brand-500/20 text-brand-300 flex items-center justify-center shrink-0 mt-0.5">
+                    <Laptop size={20} />
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <p className="text-xs font-bold text-white truncate">{dev.device_name}</p>
+                      {getStatusBadge(dev.status)}
+                    </div>
+                    <p className="text-[10px] text-gray-400 font-mono">
+                      OS: {dev.os_info} &bull; Device ID: {dev.device_id.slice(0, 8)}...
+                    </p>
+                    <div className="flex items-center gap-4 text-[10px] text-gray-400 flex-wrap pt-0.5">
+                      <span>
+                        <strong className="text-gray-200">{dev.indexed_files_count ?? 0}</strong> files indexed
+                      </span>
+                      <span>
+                        Last Sync:{" "}
+                        <strong className="text-gray-200">
+                          {dev.last_sync
+                            ? new Date(dev.last_sync).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                            : "Never"}
+                        </strong>
+                      </span>
+                      <span>
+                        Heartbeat:{" "}
+                        <strong className="text-gray-200">
+                          {dev.last_heartbeat
+                            ? new Date(dev.last_heartbeat).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                            : "None"}
+                        </strong>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Device Controls */}
+                <div className="flex items-center gap-2 self-end sm:self-center">
+                  {dev.status === "paused" ? (
+                    <button
+                      onClick={() => resumeDeviceMutation.mutate(dev.device_id)}
+                      disabled={resumeDeviceMutation.isLoading}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 flex items-center gap-1 cursor-pointer transition-all"
+                      title="Resume sync"
+                    >
+                      <Play size={12} /> Resume
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => pauseDeviceMutation.mutate(dev.device_id)}
+                      disabled={pauseDeviceMutation.isLoading}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 flex items-center gap-1 cursor-pointer transition-all"
+                      title="Pause sync"
+                    >
+                      <Pause size={12} /> Pause
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      if (confirm(`Disconnect ${dev.device_name}?`)) {
+                        unpairDeviceMutation.mutate(dev.device_id);
+                      }
+                    }}
+                    disabled={unpairDeviceMutation.isLoading}
+                    className="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-surface-hover rounded-lg transition-colors cursor-pointer"
+                    title="Disconnect / Unpair device"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Architectural Notice ────────────────────────────────────── */}
@@ -169,7 +510,7 @@ export default function WatcherPage() {
               <Folder size={16} className="text-brand-400" /> Standard User Folders
             </h2>
             <p className="text-[11px] text-gray-400 mt-0.5">
-              Core system user directories available for synchronization.
+              Core system user directories available for synchronization (Desktop, Documents, Downloads, Pictures, Videos).
             </p>
           </div>
           <span className="text-xs px-2.5 py-1 rounded-full bg-surface border border-surface-border text-gray-300">
@@ -208,7 +549,7 @@ export default function WatcherPage() {
                           : "bg-amber-500/20 text-amber-300"
                       }`}
                     >
-                      {loc.enabled ? "Active" : "Paused"}
+                      {loc.enabled ? "Watching" : "Disabled / Paused"}
                     </span>
                     {loc.last_scan_at && (
                       <span className="text-[9px] text-gray-500 flex items-center gap-1">
@@ -223,7 +564,7 @@ export default function WatcherPage() {
                 {loc.enabled ? (
                   <button
                     onClick={() => pauseMutation.mutate(loc.id)}
-                    title="Pause sync"
+                    title="Pause / Disable folder"
                     className="p-1.5 text-gray-400 hover:text-amber-400 hover:bg-surface-hover rounded-lg transition-colors cursor-pointer"
                   >
                     <Pause size={14} />
@@ -231,7 +572,7 @@ export default function WatcherPage() {
                 ) : (
                   <button
                     onClick={() => resumeMutation.mutate(loc.id)}
-                    title="Resume sync"
+                    title="Enable folder"
                     className="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-surface-hover rounded-lg transition-colors cursor-pointer"
                   >
                     <Play size={14} />
@@ -250,7 +591,7 @@ export default function WatcherPage() {
         </div>
       </div>
 
-      {/* ── Custom Folders & Drives ─────────────────────────────────── */}
+      {/* ── Custom Folders & Extra Drives ─────────────────────────────────── */}
       <div className="card p-5 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-surface-border">
           <div>
@@ -258,7 +599,7 @@ export default function WatcherPage() {
               <HardDrive size={16} className="text-purple-400" /> Custom Folders & Extra Drives
             </h2>
             <p className="text-[11px] text-gray-400 mt-0.5">
-              Authorize specific projects, USB drives, or custom directory locations.
+              Authorize specific project folders, USB drives, or custom directory locations (e.g. D:\Projects).
             </p>
           </div>
 
@@ -270,7 +611,7 @@ export default function WatcherPage() {
           </button>
         </div>
 
-        {/* Add Folder Modal/Form */}
+        {/* Add Folder Form */}
         {isAdding && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
@@ -285,7 +626,7 @@ export default function WatcherPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. D:\Projects or /Users/name/work"
+                  placeholder="e.g. D:\Projects or C:\Work\Code"
                   value={newPath}
                   onChange={(e) => setNewPath(e.target.value)}
                   className="w-full bg-surface-card border border-surface-border rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500"
@@ -370,7 +711,7 @@ export default function WatcherPage() {
                         : "bg-amber-500/20 text-amber-300"
                     }`}
                   >
-                    {loc.enabled ? "Active" : "Paused"}
+                    {loc.enabled ? "Watching" : "Disabled"}
                   </span>
 
                   {loc.enabled ? (

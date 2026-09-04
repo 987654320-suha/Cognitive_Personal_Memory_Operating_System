@@ -458,6 +458,7 @@ export interface SyncDevice {
   device_name: string;
   os_info: string;
   status: string;
+  pairing_code?: string | null;
   watched_folders: WatchedFolder[];
   last_heartbeat: string;
   last_sync: string | null;
@@ -471,14 +472,32 @@ export interface SyncOverview {
   devices: SyncDevice[];
 }
 
+export interface PairResponse {
+  device_id: string;
+  device_name: string;
+  auth_token: string;
+  status: string;
+  pairing_code?: string;
+  user_id?: number;
+}
+
 export const getSyncDevices = () =>
   api.get<SyncOverview>("/sync/devices").then(r => r.data);
 
 export const pairDevice = (deviceName = "Windows PC", osInfo = "Windows") =>
-  api.post("/sync/pair", { device_name: deviceName, os_info: osInfo }).then(r => r.data);
+  api.post<PairResponse>("/sync/pair", { device_name: deviceName, os_info: osInfo }).then(r => r.data);
+
+export const generatePairingCode = (deviceName = "Windows PC", osInfo = "Windows") =>
+  api.post<PairResponse>("/sync/pair", { device_name: deviceName, os_info: osInfo }).then(r => r.data);
 
 export const unpairDevice = (deviceId: string) =>
   api.delete(`/sync/devices/${deviceId}`).then(r => r.data);
+
+export const pauseDevice = (deviceId: string) =>
+  api.post(`/sync/devices/${deviceId}/pause`).then(r => r.data);
+
+export const resumeDevice = (deviceId: string) =>
+  api.post(`/sync/devices/${deviceId}/resume`).then(r => r.data);
 
 export const updateDeviceFolders = (deviceId: string, folders: WatchedFolder[]) =>
   api.post(`/sync/devices/${deviceId}/folders`, { watched_folders: folders }).then(r => r.data);

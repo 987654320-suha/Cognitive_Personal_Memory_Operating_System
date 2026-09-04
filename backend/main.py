@@ -270,6 +270,13 @@ def _run_sqlite_migrations():
         except (sqlite3.OperationalError, Exception):
             pass
 
+        # Add pairing_code column to sync_devices
+        try:
+            cur.execute("ALTER TABLE sync_devices ADD COLUMN pairing_code VARCHAR")
+            print("[Migration] Added 'pairing_code' column to sync_devices.")
+        except (sqlite3.OperationalError, Exception):
+            pass
+
         conn.commit()
         conn.close()
     except Exception as e:

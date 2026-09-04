@@ -87,18 +87,84 @@ class DesktopAgent:
         enabled_count = len(self.config.get_enabled_folders())
         print(f"\nConfiguration saved. {enabled_count} folder(s) authorized for sync.\n")
 
-    def ensure_paired(self) -> bool:
-        """Ensures the agent is paired with the backend."""
-        if self.config.is_paired():
+    def is_path_authorized(self, file_path: str) -> bool:
+        """Checks if a file path belongs to an authorized, currently enabled folder."""
+        if not file_path:
+            return False
+        p = Path(file_path).resolve()
+        for f in self.config.get_enabled_folders():
+            folder_p = Path(f["path"]).resolve()
+            try:
+                p.relative_to(folder_p)
+                return True
+            except ValueError:
+                continue
+        return False
+
+    def sync_with_server_permissions(self) -> None:
+        """Fetches authorized locations from backend and updates local folder statuses."""
+        if not self.config.is_paired():
+            return
+        locations = self.client.fetch_authorized_locations()
+        if not locations:
+            return
+
+        loc_map = {Path(l["path"]).resolve(): l for l in locations if "path" in l}
+        changed = False
+
+        for f in self.config.watched_folders:
+            f_path = Path(f["path"]).resolve()
+            if f_path in loc_map:
+                srv = loc_map[f_path]
+                server_enabled = bool(srv.get("enabled", True) and srv.get("permission_status") == "granted")
+                if f.get("enabled") != server_enabled:
+                    f["enabled"] = server_enabled
+                    changed = True
+
+        existing_paths = {Path(f["path"]).resolve() for f in self.config.watched_folders}
+        for srv_path, srv in loc_map.items():
+            if srv_path not in existing_paths and srv_path.exists():
+                self.config.watched_folders.append({
+                    "id": f"srv_{srv.get('id', len(self.config.watched_folders)+1)}",
+                    "name": srv.get("display_name", srv_path.name),
+                    "path": str(srv_path),
+                    "enabled": bool(srv.get("enabled", True) and srv.get("permission_status") == "granted"),
+                    "status": "idle",
+                    "file_count": 0,
+                })
+                changed = True
+
+        if changed:
+            self.config.save()
+            if self.running and not self.config.is_paused:
+                self.watcher.start(self.config.get_enabled_folders())
+
+    def ensure_paired(self, pairing_code: Optional[str] = None, auth_token: Optional[str] = None) -> bool:
+        """Ensures the agent is paired with the backend using pairing code or token."""
+        if self.config.is_paired() and not pairing_code and not auth_token:
             return True
 
+        if not pairing_code and not auth_token:
+            try:
+                code_input = input("\nEnter CogniSphere Pairing Code from Web UI (or press Enter to pair directly): ").strip()
+                if code_input:
+                    pairing_code = code_input
+            except (KeyboardInterrupt, EOFError):
+                pass
+
         print(f"[Agent] Pairing with backend: {self.config.server_url} ...")
-        res = self.client.pair_device(self.config.device_name, self.config.os_info)
+        res = self.client.pair_device(
+            device_name=self.config.device_name,
+            os_info=self.config.os_info,
+            pairing_code=pairing_code,
+            auth_token=auth_token,
+        )
         if res and res.get("device_id") and res.get("auth_token"):
             self.config.device_id = res["device_id"]
             self.config.auth_token = res["auth_token"]
             self.config.save()
             print(f"[Agent] Successfully paired! Device ID: {self.config.device_id}")
+            self.sync_with_server_permissions()
             return True
 
         print(f"[Agent] Pairing failed. Verify backend is running at {self.config.server_url}")
@@ -106,6 +172,7 @@ class DesktopAgent:
 
     def perform_scan(self) -> dict:
         """Scans all enabled folders and enqueues sync jobs."""
+        self.sync_with_server_permissions()
         enabled = self.config.get_enabled_folders()
         if not enabled:
             print("[Agent] No folders enabled for scanning.")
@@ -168,6 +235,11 @@ class DesktopAgent:
                 try:
                     if job_type == "SYNC":
                         abs_path = payload.get("abs_path")
+                        if not self.is_path_authorized(abs_path):
+                            print(f"[Sync] Skipping upload for {payload.get('filename')}: folder is disabled or revoked.")
+                            self.queue.mark_done(job_id)
+                            continue
+
                         rel_path = payload.get("relative_path")
                         sha256 = payload.get("sha256")
                         mtime = payload.get("mtime")
@@ -274,6 +346,8 @@ def main():
     parser.add_argument("--status", action="store_true", help="Show current sync status")
     parser.add_argument("--add-folder", help="Add and authorize a custom folder for synchronization")
     parser.add_argument("--enable-all-defaults", action="store_true", help="Enable all standard user folders")
+    parser.add_argument("--pair-code", "--code", help="CogniSphere Web pairing code (e.g. COG-1234)", default=None)
+    parser.add_argument("--token", help="Pre-shared device auth token from CogniSphere Web", default=None)
     args = parser.parse_args()
 
     config = AgentConfig()
@@ -316,7 +390,7 @@ def main():
         agent.run_permission_wizard()
 
     # Ensure paired
-    if not agent.ensure_paired():
+    if not agent.ensure_paired(pairing_code=args.pair_code, auth_token=args.token):
         print("[Agent] Could not pair with backend. Exiting.")
         sys.exit(1)
 
