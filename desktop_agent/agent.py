@@ -262,6 +262,16 @@ class DesktopAgent:
                                 "synced_at": datetime.now(timezone.utc).isoformat(),
                             })
                             print(f"[Sync] Ingested: {payload.get('filename')} -> Memory #{res.get('memory_id')}")
+                        elif res and res.get("status_code") == 401:
+                            print("\n[Agent] ⚠️ Server rejected device authentication (401).")
+                            print("[Agent] The cloud backend was likely restarted or redeployed, resetting device pairing.")
+                            print("[Agent] Resetting local pairing credentials so you can pair with a fresh code.")
+                            self.config.device_id = ""
+                            self.config.auth_token = ""
+                            self.config.save()
+                            self.running = False
+                            print("[Agent] Stopping sync queue. Please generate a new pairing code from the CogniSphere Web UI.\n")
+                            break
                         else:
                             self.queue.mark_failed(job_id, "Sync upload failed")
 
@@ -278,6 +288,9 @@ class DesktopAgent:
 
                 except Exception as e:
                     self.queue.mark_failed(job_id, str(e))
+
+                # Pacing: pause 1.5s between uploads to prevent cloud server memory overload
+                time.sleep(1.5)
 
             time.sleep(1)
 
@@ -348,9 +361,19 @@ def main():
     parser.add_argument("--enable-all-defaults", action="store_true", help="Enable all standard user folders")
     parser.add_argument("--pair-code", "--code", help="CogniSphere Web pairing code (e.g. COG-1234)", default=None)
     parser.add_argument("--token", help="Pre-shared device auth token from CogniSphere Web", default=None)
+    parser.add_argument("--reset", action="store_true", help="Reset local device pairing and clear sync queue")
     args = parser.parse_args()
 
     config = AgentConfig()
+
+    if args.reset:
+        config.device_id = ""
+        config.auth_token = ""
+        config.save()
+        from desktop_agent.sync_queue import SyncQueue
+        SyncQueue().clear()
+        print("[Agent] Local pairing and sync queue reset successfully.")
+        return
 
     if args.server:
         config.server_url = args.server

@@ -160,11 +160,20 @@ def should_ignore_file(file_path: Path | str) -> bool:
     return False
 
 
+# Max file size: 15 MB to prevent memory exhaustion on cloud servers
+MAX_SYNC_FILE_SIZE_BYTES = 15 * 1024 * 1024
+
+
 def is_sync_candidate(file_path: Path | str) -> bool:
-    """Returns True if the file is an active, readable, supported file."""
+    """Returns True if the file is an active, readable, supported file within size limit."""
     path = Path(file_path)
     if not path.is_file():
         return False
     if should_ignore_file(path):
+        return False
+    try:
+        if path.stat().st_size > MAX_SYNC_FILE_SIZE_BYTES:
+            return False
+    except Exception:
         return False
     return ParserRegistry.is_supported(path)

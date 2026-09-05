@@ -113,6 +113,9 @@ class BackendClient:
 
             if res.status_code == 200:
                 return res.json()
+            elif res.status_code == 401:
+                print(f"[Client] Authentication error for {p.name} (401): {res.text}")
+                return {"error": "unauthorized", "status_code": 401, "detail": res.text}
             else:
                 print(f"[Client] Sync failed for {p.name} ({res.status_code}): {res.text}")
                 return None

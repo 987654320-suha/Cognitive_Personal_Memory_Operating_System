@@ -113,3 +113,9 @@ class SyncQueue:
             cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM queue_jobs WHERE status = 'pending' AND retries < 5")
             return cur.fetchone()[0]
+
+    def clear(self) -> None:
+        """Clears all jobs from the queue."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("DELETE FROM queue_jobs")
+            conn.commit()
