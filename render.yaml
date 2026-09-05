@@ -37,9 +37,7 @@ services:
       - key: FRONTEND_URL
         value: https://cognisphere-frontend.onrender.com
       - key: DATABASE_URL
-        fromDatabase:
-          name: cognisphere-db
-          property: connectionString
+        sync: false
       - key: CORS_ORIGINS
         sync: false
 
