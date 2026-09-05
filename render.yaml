@@ -1,6 +1,13 @@
 # Render Blueprint Specification
 # Documentation: https://render.com/docs/blueprint-spec
 
+databases:
+  - name: cognisphere-db
+    plan: free
+    region: oregon
+    databaseName: cognisphere
+    user: cognisphere_user
+
 services:
   # ── Backend Web Service ───────────────────────────────────────────────────────
   - type: web
@@ -30,7 +37,9 @@ services:
       - key: FRONTEND_URL
         value: https://cognisphere-frontend.onrender.com
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: cognisphere-db
+          property: connectionString
       - key: CORS_ORIGINS
         sync: false
 
