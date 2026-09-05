@@ -37,16 +37,17 @@ def search(
     Search memories using the selected mode.
     Enforces user isolation: User A cannot see User B's search results.
     """
+    uid = current_user.id if current_user else None
     if mode == "acma":
-        results = acma_search(q, db, top_k=top_k)
+        results = acma_search(q, db, top_k=top_k, user_id=uid)
     elif mode == "fast":
-        results = keyword_search(q, db, top_k=top_k)
+        results = keyword_search(q, db, top_k=top_k, user_id=uid)
     elif mode == "semantic":
-        results = semantic_search(q, top_k=top_k)
+        results = semantic_search(q, top_k=top_k, user_id=uid)
     elif mode == "keyword":
-        results = keyword_search(q, db, top_k=top_k)
+        results = keyword_search(q, db, top_k=top_k, user_id=uid)
     else:
-        results = acma_search(q, db, top_k=top_k)
+        results = acma_search(q, db, top_k=top_k, user_id=uid)
 
     # Scoped to current authenticated user
     if current_user:
@@ -67,13 +68,15 @@ def search(
 @router.get("/suggest")
 def suggest(
     q:    str = Query(..., min_length=1),
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Fast autocomplete suggestions (keyword match, top 5).
     Suitable for search-as-you-type.
     """
-    results = keyword_search(q, db, top_k=5)
+    uid = current_user.id if current_user else None
+    results = keyword_search(q, db, top_k=5, user_id=uid)
     return [{"id": r["id"], "title": r.get("title", ""), "file_type": r.get("file_type", "")} for r in results]
 
 

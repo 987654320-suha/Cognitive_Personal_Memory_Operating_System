@@ -20,60 +20,59 @@ def search(
     db: Session,
     mode: str = "acma",
     top_k: int = 10,
+    user_id: int | None = None,
 ) -> dict:
     """
     Unified search entry point.
 
     Modes:
-        acma     â€” ACMA 6-factor activation ranking (default, best quality)
-        semantic â€” FAISS cosine similarity only (faster)
-        keyword  â€” SQLite LIKE full-text search
-        object   â€” Search by detected YOLO object labels
-        combined â€” semantic + keyword merged and de-duplicated
+        acma     — ACMA 6-factor activation ranking (default, best quality)
+        semantic — FAISS cosine similarity only (faster)
+        keyword  — SQLite LIKE full-text search
+        object   — Search by detected YOLO object labels
+        combined — semantic + keyword merged and de-duplicated
     """
     if mode == "acma":
-        results = acma_search(query, db, top_k=top_k)
+        results = acma_search(query, db, top_k=top_k, user_id=user_id)
         return {"mode": mode, "count": len(results), "results": results}
 
     if mode == "semantic":
-        results = semantic_search(query, top_k=top_k)
+        results = semantic_search(query, top_k=top_k, user_id=user_id)
         return {"mode": mode, "count": len(results), "results": results}
 
     if mode == "keyword":
-        results = keyword_search(query, db, top_k=top_k)
+        results = keyword_search(query, db, top_k=top_k, user_id=user_id)
         return {"mode": mode, "count": len(results), "results": results}
 
     if mode == "object":
-        results = object_search(query, db, top_k=top_k)
+        results = object_search(query, db, top_k=top_k, user_id=user_id)
         return {"mode": mode, "count": len(results), "results": results}
 
     if mode == "combined":
-        sem  = semantic_search(query, top_k=top_k)
-        kw   = keyword_search(query, db, top_k=top_k)
+        sem  = semantic_search(query, top_k=top_k, user_id=user_id)
+        kw   = keyword_search(query, db, top_k=top_k, user_id=user_id)
         results = _merge_dedupe(sem, kw, top_k)
         return {"mode": mode, "count": len(results), "results": results}
 
     return {"error": f"Unknown search mode: {mode}", "results": []}
 
 
-def keyword_search(query: str, db: Session, top_k: int = 10) -> list[dict]:
+def keyword_search(query: str, db: Session, top_k: int = 10, user_id: int | None = None) -> list[dict]:
     """
     SQLite LIKE search on title + description.
     Fast fallback when embeddings are unavailable.
     """
     pattern = f"%{query}%"
-    rows = (
-        db.query(Memory)
-        .filter(
-            or_(
-                Memory.title.ilike(pattern),
-                Memory.description.ilike(pattern),
-                Memory.text_content.ilike(pattern),
-            )
+    q_filter = db.query(Memory).filter(
+        or_(
+            Memory.title.ilike(pattern),
+            Memory.description.ilike(pattern),
+            Memory.text_content.ilike(pattern),
         )
-        .limit(top_k)
-        .all()
     )
+    if user_id is not None:
+        q_filter = q_filter.filter(Memory.user_id == user_id)
+    rows = q_filter.limit(top_k).all()
     results = []
     for m in rows:
         d = m.to_dict()
@@ -83,13 +82,16 @@ def keyword_search(query: str, db: Session, top_k: int = 10) -> list[dict]:
     return results
 
 
-def object_search(query: str, db: Session, top_k: int = 10) -> list[dict]:
+def object_search(query: str, db: Session, top_k: int = 10, user_id: int | None = None) -> list[dict]:
     """
     Search memories by YOLO-detected objects stored in the objects column.
     e.g. query='car' finds memories where car was detected in the image.
     """
     query_lower = query.lower()
-    all_memories = db.query(Memory).all()
+    q_mem = db.query(Memory)
+    if user_id is not None:
+        q_mem = q_mem.filter(Memory.user_id == user_id)
+    all_memories = q_mem.all()
     results = []
 
     for m in all_memories:

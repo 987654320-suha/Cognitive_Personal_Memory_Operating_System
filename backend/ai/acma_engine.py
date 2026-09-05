@@ -50,6 +50,7 @@ class MemoryActivation:
     objects:     list
     file_type:   str = ""
     text_content: str = ""
+    user_id:     Optional[int] = None
 
     semantic_score:     float = 0.0
     goal_score:         float = 0.0
@@ -66,6 +67,7 @@ class MemoryActivation:
     def to_dict(self):
         return {
             "id":               self.memory_id,
+            "user_id":          self.user_id,
             "title":            self.title,
             "description":      self.description,
             "source":           self.source,
@@ -182,6 +184,7 @@ class ACMAEngine:
 
             activations.append(MemoryActivation(
                 memory_id=mid,
+                user_id=mem.get("user_id"),
                 title=mem.get("title", ""),
                 description=mem.get("description", ""),
                 source=mem.get("source", ""),

@@ -56,3 +56,33 @@ def test_search_explain_endpoint(client, sample_memories):
     assert response.status_code == 200
     data = response.json()
     assert data.get("in_results") is True or "activation" in data
+
+
+def test_acma_search_preserves_user_id_and_filters():
+    from fastapi.testclient import TestClient
+    from main import app
+    client = TestClient(app)
+    import time
+    user_email = f"search_user_{int(time.time()*1000)}@cognisphere.ai"
+    reg = client.post("/auth/register", json={"email": user_email, "password": "Password123!"})
+    assert reg.status_code == 201
+    token = reg.json()["token"]
+    user_id = reg.json()["user"]["id"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create memory for this user
+    mem_res = client.post(
+        "/memories/",
+        json={"title": "Target Document", "description": "Doc for user 1", "source": "target.txt"},
+        headers=headers,
+    )
+    assert mem_res.status_code == 200
+    m1_id = mem_res.json()["memory"]["id"]
+
+    # Search with ACMA mode
+    res = client.get("/search/?q=Target&mode=acma", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert all(r.get("user_id") == user_id for r in data["results"])
+    assert any(r["id"] == m1_id for r in data["results"])
+
