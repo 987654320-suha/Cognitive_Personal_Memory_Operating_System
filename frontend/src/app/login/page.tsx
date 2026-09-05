@@ -18,7 +18,7 @@ export default function LoginPage() {
     if (!email || !password) return;
     setSubmitting(true);
     try {
-      await login(email, password);
+      await login(email.trim().toLowerCase(), password);
     } catch {
       // Toast shown in AuthContext
     } finally {

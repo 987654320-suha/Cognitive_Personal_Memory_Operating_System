@@ -1,12 +1,13 @@
 // 📁 LOCATION: frontend/src/app/page.tsx
 "use client";
-import { useQuery } from "react-query";
+import { useQuery, useQueryClient } from "react-query";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getStats, getRecent, checkHealth, API_BASE_URL } from "@/services/api";
 import { smartTitle, relativeDate, fileTypeIcon } from "@/utils/helpers";
 import SearchBar from "@/components/Search/SearchBar";
+import FolderPermissionsCard from "@/components/Watcher/FolderPermissionsCard";
 import {
   Layers, Target, FileStack, Activity, ChevronRight,
   TrendingUp, Wifi, WifiOff, MessageSquare, Upload,
@@ -14,6 +15,7 @@ import {
 
 export default function Dashboard() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: stats  } = useQuery("stats",  getStats,         { refetchInterval: 30000 });
   const { data: recent } = useQuery("recent", () => getRecent(8));
   const { data: health, isSuccess } = useQuery("health", async () => {
@@ -43,10 +45,10 @@ export default function Dashboard() {
   const isConnected = !!health || isSuccess;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
 
       {/* Hero */}
-      <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} className="mb-8">
+      <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }}>
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-brand-600 flex items-center justify-center">
@@ -72,7 +74,7 @@ export default function Dashboard() {
       </motion.div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {statCards.map((s, i) => (
           <motion.div key={s.label} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }}
             transition={{ delay: i * 0.05 }} className="card p-4">
@@ -83,8 +85,18 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* ── Prominent Folder & Drive Permissions + Instant Sync Section ── */}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+        <FolderPermissionsCard
+          onMemoriesUpdated={() => {
+            queryClient.invalidateQueries("recent");
+            queryClient.invalidateQueries("stats");
+          }}
+        />
+      </motion.div>
+
       {/* Quick actions */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
+      <div className="grid grid-cols-2 gap-3">
         <Link href="/upload">
           <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.2 }}
             className="card p-4 hover:border-brand-600/50 hover:bg-surface-hover transition-all cursor-pointer flex items-center gap-3">

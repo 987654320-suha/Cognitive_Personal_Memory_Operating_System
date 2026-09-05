@@ -22,17 +22,47 @@ export const api = axios.create({
   withCredentials: true,
 });
 
+const AUTH_TOKEN_KEY = "cognisphere_auth_token";
+
 let _inMemoryToken: string | null = null;
+if (typeof window !== "undefined") {
+  try {
+    _inMemoryToken = localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    _inMemoryToken = null;
+  }
+}
 
 export const setAuthToken = (token: string | null) => {
   _inMemoryToken = token;
+  if (typeof window !== "undefined") {
+    try {
+      if (token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, token);
+      } else {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+      }
+    } catch {
+      // localStorage may be restricted in private browsing
+    }
+  }
 };
 
-export const getAuthToken = () => _inMemoryToken;
+export const getAuthToken = (): string | null => {
+  if (!_inMemoryToken && typeof window !== "undefined") {
+    try {
+      _inMemoryToken = localStorage.getItem(AUTH_TOKEN_KEY);
+    } catch {
+      _inMemoryToken = null;
+    }
+  }
+  return _inMemoryToken;
+};
 
 api.interceptors.request.use((config) => {
-  if (_inMemoryToken && !config.headers.Authorization) {
-    config.headers.Authorization = `Bearer ${_inMemoryToken}`;
+  const token = getAuthToken();
+  if (token && !config.headers.Authorization) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });

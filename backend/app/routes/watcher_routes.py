@@ -43,11 +43,13 @@ class LocationUpdate(BaseModel):
 def _get_standard_defaults() -> list[dict]:
     home = Path.home()
     candidates = [
-        {"name": "Desktop",   "path": str(home / "Desktop")},
-        {"name": "Documents", "path": str(home / "Documents")},
-        {"name": "Downloads", "path": str(home / "Downloads")},
-        {"name": "Pictures",  "path": str(home / "Pictures")},
-        {"name": "Videos",    "path": str(home / "Videos")},
+        {"name": "Documents", "path": str(home / "Documents"), "type": "standard", "enabled": True},
+        {"name": "Desktop",   "path": str(home / "Desktop"),   "type": "standard", "enabled": True},
+        {"name": "Downloads", "path": str(home / "Downloads"), "type": "standard", "enabled": False},
+        {"name": "Pictures",  "path": str(home / "Pictures"),  "type": "standard", "enabled": False},
+        {"name": "Videos",    "path": str(home / "Videos"),    "type": "standard", "enabled": False},
+        {"name": "C: Drive",  "path": "C:\\",                  "type": "drive",    "enabled": False},
+        {"name": "E: Drive",  "path": "E:\\",                  "type": "drive",    "enabled": False},
     ]
     return candidates
 
@@ -94,7 +96,7 @@ def list_locations(
 ):
     """
     List all authorized watch locations for the authenticated user.
-    If none exist yet, automatically seeds standard user folders (Documents, Downloads, etc.)
+    If none exist yet, automatically seeds standard user folders (Documents, Downloads, C:, E:, etc.)
     with permission_status='granted'.
     """
     locations = (
@@ -112,9 +114,9 @@ def list_locations(
                 user_id=current_user.id,
                 path=item["path"],
                 display_name=item["name"],
-                location_type="standard",
+                location_type=item.get("type", "standard"),
                 permission_status="granted",
-                enabled=True,
+                enabled=item.get("enabled", False),
             )
             db.add(loc)
             seeded.append(loc)
@@ -122,6 +124,27 @@ def list_locations(
         for s in seeded:
             db.refresh(s)
         locations = seeded
+    else:
+        # Ensure any missing standard folders/drives (e.g. C: Drive, E: Drive) are added for existing users
+        existing_names = {loc.display_name for loc in locations}
+        added_any = False
+        for item in _get_standard_defaults():
+            if item["name"] not in existing_names:
+                new_loc = WatcherLocation(
+                    user_id=current_user.id,
+                    path=item["path"],
+                    display_name=item["name"],
+                    location_type=item.get("type", "standard"),
+                    permission_status="granted",
+                    enabled=item.get("enabled", False),
+                )
+                db.add(new_loc)
+                locations.append(new_loc)
+                added_any = True
+        if added_any:
+            db.commit()
+            for loc in locations:
+                db.refresh(loc)
 
     return [loc.to_dict() for loc in locations]
 

@@ -31,7 +31,7 @@ export default function RegisterPage() {
 
     setSubmitting(true);
     try {
-      await register(email, password);
+      await register(email.trim().toLowerCase(), password);
     } catch {
       // Toast shown in AuthContext
     } finally {

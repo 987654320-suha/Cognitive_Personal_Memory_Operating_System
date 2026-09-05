@@ -63,7 +63,7 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An account with this email address already exists.",
+            detail="An account with this email address already exists. Please log in.",
         )
 
     user = User(
@@ -104,7 +104,11 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
         )
 
     user = db.query(User).filter(User.email == email).first()
-    if not user or not verify_password(req.password, user.password_hash):
+    valid_pass = False
+    if user:
+        valid_pass = verify_password(req.password, user.password_hash) or verify_password(req.password.strip(), user.password_hash)
+
+    if not user or not valid_pass:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
