@@ -1,4 +1,4 @@
-﻿# ðŸ“ LOCATION: backend/conftest.py
+# ðŸ“ LOCATION: backend/conftest.py
 """
 conftest.py
 ===========
@@ -21,11 +21,14 @@ from main import app
 
 # â”€â”€ In-memory test DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+from sqlalchemy.pool import StaticPool
+
 TEST_DB_URL = "sqlite:///:memory:"
 
 test_engine = create_engine(
     TEST_DB_URL,
     connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 

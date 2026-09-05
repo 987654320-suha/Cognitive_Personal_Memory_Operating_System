@@ -1,4 +1,4 @@
-﻿"""
+"""
 importance_scorer.py
 ====================
 Assigns an importance score (0.0â€“1.0) to a memory at ingest time.
@@ -42,7 +42,7 @@ def score_importance(title: str, text: str) -> float:
 
     # High-value keyword hits (max contribution 0.50)
     hits = sum(1 for p in _HIGH_VALUE_KEYWORDS if re.search(p, combined))
-    score += min(hits / len(_HIGH_VALUE_KEYWORDS), 1.0) * 0.50
+    score += min(hits * 0.25, 0.50)
 
     # Low-value keyword penalty (max -0.20)
     penalties = sum(1 for p in _LOW_VALUE_KEYWORDS if re.search(p, combined))

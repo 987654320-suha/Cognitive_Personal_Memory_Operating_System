@@ -1,4 +1,4 @@
-﻿# ðŸ“ LOCATION: backend/app/services/search_service.py
+# ðŸ“ LOCATION: backend/app/services/search_service.py
 """
 search_service.py
 =================
@@ -68,6 +68,7 @@ def keyword_search(query: str, db: Session, top_k: int = 10) -> list[dict]:
             or_(
                 Memory.title.ilike(pattern),
                 Memory.description.ilike(pattern),
+                Memory.text_content.ilike(pattern),
             )
         )
         .limit(top_k)

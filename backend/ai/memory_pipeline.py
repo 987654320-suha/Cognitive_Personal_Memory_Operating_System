@@ -297,3 +297,8 @@ def _update_search_index() -> None:
         print(f"[Pipeline] Index update error: {e}")
 
 
+# Backward compatibility alias
+_update_faiss = _update_search_index
+
+
+

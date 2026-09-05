@@ -14,6 +14,7 @@ try:
 except ImportError:
     pass
 
+from typing import Optional
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +22,8 @@ from sqlalchemy.orm import Session
 
 from database.database import engine, Base, DATABASE_URL, is_sqlite, get_db
 
+from app.models.user           import User
+from app.auth.deps             import get_optional_current_user
 from app.models.memory         import Memory
 from app.models.goal           import Goal
 from app.models.goal_memory    import GoalMemory
@@ -180,15 +183,14 @@ def health():
     return {"status": "healthy"}
 
 @app.get("/recent", tags=["timeline"])
-def recent_alias(limit: int = 20):
-    """Direct alias for /timeline/recent endpoint."""
-    from database.database import SessionLocal
+def recent_alias(
+    limit: int = 20,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    """Direct alias for /timeline/recent endpoint with optional user scoping."""
     from app.routes.timeline_routes import recent_memories
-    db = SessionLocal()
-    try:
-        return recent_memories(limit=limit, db=db)
-    finally:
-        db.close()
+    return recent_memories(limit=limit, current_user=current_user, db=db)
 
 
 @app.get("/status/{job_id}", tags=["upload"])

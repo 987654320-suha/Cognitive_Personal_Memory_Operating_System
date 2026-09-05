@@ -101,6 +101,75 @@ def update_heartbeat(
     return True
 
 
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads")).resolve()
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def async_enrich_memory(memory_id: int, file_path: str, user_id: Optional[int] = None) -> None:
+    """
+    Background worker that runs heavy ML embedding, summary, FAISS indexing,
+    and GAMA goal detection without blocking the HTTP sync response.
+    """
+    from database.database import SessionLocal
+    from app.models.memory import Memory
+    from ai.embedding_service import get_embedding
+    from ai.importance_scorer import score_importance
+    from ai.summarizer import generate_summary
+    from ai.memory_pipeline import _enrich_title, _update_search_index
+    from ai.gama_service import GAMAService
+
+    print(f"[SyncEnrichment] Starting background ML processing for Memory #{memory_id}")
+    db = SessionLocal()
+    try:
+        mem = db.query(Memory).filter(Memory.id == memory_id).first()
+        if not mem:
+            return
+
+        text = mem.text_content or ""
+        title = mem.title or ""
+
+        # 1. Embeddings
+        try:
+            enriched_title = _enrich_title(title, text)
+            embed_text = f"{enriched_title}\n\n{text[:3500]}"
+            emb = get_embedding(embed_text)
+            if emb:
+                mem.embedding = json.dumps(emb)
+        except Exception as emb_err:
+            print(f"[SyncEnrichment] Embedding warning: {emb_err}")
+
+        # 2. Importance score & summary
+        try:
+            mem.importance_score = score_importance(title, text)
+            if text and len(text) > 80:
+                summary = generate_summary(text)
+                if summary:
+                    mem.description = summary
+        except Exception as sum_err:
+            print(f"[SyncEnrichment] Summary warning: {sum_err}")
+
+        db.commit()
+
+        # 3. Update search indexes (FAISS + BM25)
+        try:
+            _update_search_index()
+        except Exception as idx_err:
+            print(f"[SyncEnrichment] Search index warning: {idx_err}")
+
+        # 4. GAMA goal linking
+        try:
+            gama = GAMAService(db)
+            gama.link_memory_to_goals(memory_id=mem.id, text_content=f"{title} {text}")
+        except Exception as ge:
+            print(f"[SyncEnrichment] GAMA warning: {ge}")
+
+        print(f"[SyncEnrichment] Completed ML processing for Memory #{memory_id}")
+    except Exception as e:
+        print(f"[SyncEnrichment] Failed for Memory #{memory_id}: {e}")
+    finally:
+        db.close()
+
+
 def sync_file_record(
     device_id: str,
     relative_path: str,
@@ -109,9 +178,11 @@ def sync_file_record(
     file_modified_at: str,
     file_bytes: bytes,
     db: Session,
+    background_tasks: Optional[Any] = None,
 ) -> dict:
     """
-    Syncs a file from desktop agent with SHA-256 deduplication and pipeline ingestion.
+    Syncs a file from desktop agent with SHA-256 deduplication and async memory pipeline ingestion.
+    Returns immediately after saving the file and DB records, offloading heavy ML to background.
     """
     now = datetime.now(timezone.utc).isoformat()
     device = db.query(SyncDevice).filter(SyncDevice.device_id == device_id).first()
@@ -182,20 +253,78 @@ def sync_file_record(
                 "title": existing_memory.title,
             }
 
-    # 2. Ingest through existing CogniSphere Pipeline
+    # 2. Fast File Save & Memory Creation (Async ML processing in background)
     try:
-        memory_dict = ingest_uploaded_file(file_bytes, filename, user_id=user_id)
-        memory_id = memory_dict.get("id")
+        safe_filename = Path(filename).name
+        dest = UPLOAD_DIR / safe_filename
+        dest.write_bytes(file_bytes)
+        ext = Path(safe_filename).suffix.lower()
+        raw_title = Path(safe_filename).stem.replace("_", " ").replace("-", " ").title()
 
-        # Refresh in-memory cache and indices
+        text = ""
+        objects = []
+        image = None
         try:
-            refresh_memory_cache()
-            memories = get_all_memories(user_id=user_id)
-            if memories:
-                build_index(memories)
-                build_bm25(memories)
-        except Exception as idx_err:
-            print(f"[SyncService] Index refresh warning: {idx_err}")
+            if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"):
+                from ai.memory_pipeline import _run_ocr, _run_object_detection
+                text = _run_ocr(str(dest))
+                objects = _run_object_detection(str(dest))
+                image = f"/uploads/{safe_filename}"
+            elif ext == ".pdf":
+                from ai.memory_pipeline import _run_pdf
+                text = _run_pdf(str(dest))
+            elif ext in (".docx", ".doc"):
+                from ai.memory_pipeline import _run_docx
+                text = _run_docx(str(dest))
+            else:
+                try:
+                    text = dest.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    text = ""
+        except Exception as extract_err:
+            print(f"[SyncService] Extraction warning: {extract_err}")
+
+        title = raw_title
+        if text:
+            import re
+            is_generic = re.match(r"^(img|image|photo|dsc|doc|file|scan)\d*$", raw_title.lower())
+            if is_generic:
+                lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 5]
+                if lines:
+                    title = lines[0][:80]
+
+        # Check if memory already exists for this source and user
+        mem_query = db.query(Memory).filter(Memory.source == safe_filename)
+        if user_id is not None:
+            mem_query = mem_query.filter(Memory.user_id == user_id)
+        memory = mem_query.first()
+
+        if not memory:
+            memory = Memory(
+                title=title,
+                description=text[:500] if text else "",
+                text_content=text,
+                source=safe_filename,
+                file_type=ext.lstrip("."),
+                image=image,
+                date=now,
+                embedding=json.dumps([]),
+                objects=json.dumps(objects),
+                importance_score=0.5,
+                access_count=0,
+                user_id=user_id,
+            )
+            db.add(memory)
+        else:
+            memory.title = title
+            memory.text_content = text
+            if text:
+                memory.description = text[:500]
+            memory.date = now
+
+        db.commit()
+        db.refresh(memory)
+        memory_id = memory.id
 
         # 3. Create or update IndexedFile manifest record
         record = db.query(IndexedFile).filter(
@@ -208,7 +337,7 @@ def sync_file_record(
                 device_id=device_id,
                 relative_path=relative_path,
                 filename=filename,
-                extension=Path(filename).suffix.lower(),
+                extension=ext,
                 file_size=len(file_bytes),
                 sha256_hash=sha256_hash,
                 file_modified_at=file_modified_at,
@@ -237,13 +366,27 @@ def sync_file_record(
         db.commit()
         db.refresh(record)
 
-        print(f"[SyncService] Successfully synced {filename} (Memory #{memory_id}) [user={user_id}]")
+        # Refresh RAM memory cache so searches immediately reflect the new memory
+        try:
+            refresh_memory_cache()
+        except Exception as rc_err:
+            print(f"[SyncService] Cache refresh warning: {rc_err}")
+
+        # Enqueue heavy ML enrichment asynchronously
+        if background_tasks is not None and hasattr(background_tasks, "add_task"):
+            background_tasks.add_task(async_enrich_memory, memory_id, str(dest), user_id)
+        else:
+            import threading
+            t = threading.Thread(target=async_enrich_memory, args=(memory_id, str(dest), user_id), daemon=True)
+            t.start()
+
+        print(f"[SyncService] Fast-synced {filename} (Memory #{memory_id}) [user={user_id}]")
         return {
             "success": True,
             "file_id": record.id,
             "memory_id": memory_id,
             "deduplicated": False,
-            "title": memory_dict.get("title", filename),
+            "title": memory.title,
         }
 
     except Exception as e:

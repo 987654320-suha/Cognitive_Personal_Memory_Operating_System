@@ -10,7 +10,7 @@ and folder control from the web interface.
 from __future__ import annotations
 import json
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Form, Query, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -230,6 +230,7 @@ def update_device_folders(
 
 @router.post("/file")
 async def sync_file(
+    background_tasks: BackgroundTasks,
     device_id: str = Form(...),
     auth_token: str = Form(...),
     relative_path: str = Form(...),
@@ -240,7 +241,7 @@ async def sync_file(
 ):
     """
     Syncs a created or modified file from the desktop agent.
-    Performs SHA-256 deduplication and pipeline memory ingestion.
+    Performs SHA-256 deduplication and async memory pipeline ingestion.
     """
     authenticate_agent(device_id, auth_token, db)
 
@@ -253,6 +254,7 @@ async def sync_file(
         file_modified_at=modified_at,
         file_bytes=file_bytes,
         db=db,
+        background_tasks=background_tasks,
     )
 
     if not result.get("success"):

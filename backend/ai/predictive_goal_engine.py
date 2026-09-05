@@ -1,4 +1,4 @@
-﻿# ðŸ“ LOCATION: backend/ai/predictive_goal_engine.py
+# ðŸ“ LOCATION: backend/ai/predictive_goal_engine.py
 """
 predictive_goal_engine.py
 ==========================
@@ -120,17 +120,20 @@ class PredictiveGoalEngine:
         sequence_points: list[TrajectoryPoint] = []
         acquired_dates: list[datetime] = []
 
+        used_memories = set()
         for idx, doc_name in enumerate(expected_sequence):
-            match = self._find_matching_memory(doc_name, present_memories)
+            match = self._find_matching_memory(doc_name, present_memories, used_memories)
             acquired = match is not None
             acquired_date = match.get("date") if match else None
 
-            if acquired_date:
-                try:
-                    dt = datetime.fromisoformat(acquired_date.replace("Z", "+00:00"))
-                    acquired_dates.append(dt)
-                except Exception:
-                    pass
+            if match and id(match) not in used_memories:
+                used_memories.add(id(match))
+                if acquired_date:
+                    try:
+                        dt = datetime.fromisoformat(acquired_date.replace("Z", "+00:00"))
+                        acquired_dates.append(dt)
+                    except Exception:
+                        pass
 
             sequence_points.append(TrajectoryPoint(
                 document_name=doc_name,
@@ -155,10 +158,16 @@ class PredictiveGoalEngine:
 
     # â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    def _find_matching_memory(self, doc_name: str, memories: list[dict]) -> dict | None:
-        """Fuzzy match: checks if any keyword from doc_name appears in memory title."""
-        keywords = [w.lower() for w in doc_name.split() if len(w) > 3]
+    def _find_matching_memory(self, doc_name: str, memories: list[dict], used_memories: set = None) -> dict | None:
+        """Fuzzy match: checks if distinguishing keywords from doc_name appear in memory title."""
+        generic_words = {"certificate", "document", "copy", "proof", "application", "letter"}
+        keywords = [w.lower() for w in doc_name.split() if len(w) > 3 and w.lower() not in generic_words]
+        if not keywords:
+            keywords = [w.lower() for w in doc_name.split() if len(w) > 3]
+
         for mem in memories:
+            if used_memories is not None and id(mem) in used_memories:
+                continue
             title_lower = (mem.get("title") or "").lower()
             if any(kw in title_lower for kw in keywords):
                 return mem

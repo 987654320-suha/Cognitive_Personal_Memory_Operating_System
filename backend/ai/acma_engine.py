@@ -1,4 +1,4 @@
-﻿# ðŸ“ LOCATION: backend/ai/acma_engine.py
+# ðŸ“ LOCATION: backend/ai/acma_engine.py
 """
 acma_engine.py  â€” ACCURACY FIX v2
 ====================================
@@ -104,12 +104,20 @@ class ACMAEngine:
     def rank(
         self,
         query:           str,
-        hybrid_results:  list[dict],          # from hybrid_search()
-        all_memories:    list[dict],
-        active_goals:    list[dict],
-        goal_memory_map: dict[int, list[int]],
+        hybrid_results:  list[dict] = None,          # from hybrid_search()
+        all_memories:    list[dict] = None,
+        active_goals:    list[dict] = None,
+        goal_memory_map: dict[int, list[int]] = None,
         weights:         dict = None,
+        faiss_results:   list[dict] = None,          # backward-compatibility alias
     ) -> list[MemoryActivation]:
+
+        if hybrid_results is None and faiss_results is not None:
+            hybrid_results = faiss_results
+        hybrid_results = hybrid_results or []
+        all_memories = all_memories or []
+        active_goals = active_goals or []
+        goal_memory_map = goal_memory_map or {}
 
         w = weights or self.weights
         mem_by_id = {m["id"]: m for m in all_memories}
