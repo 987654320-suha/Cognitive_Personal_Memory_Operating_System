@@ -22,6 +22,8 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+!backend/reality_search.db
+!backend/persisted_accounts.json
 
 # Uploads and static media
 uploads/

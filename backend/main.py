@@ -285,10 +285,55 @@ def _run_sqlite_migrations():
         print(f"[Migration] SQLite migration notice: {e}")
 
 
+def _seed_persisted_users():
+    """
+    Restores persisted accounts from persisted_accounts.json on boot
+    so accounts are never lost on ephemeral container restarts.
+    """
+    import json
+    from app.models.user import User
+    from database.database import SessionLocal
+
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    accounts_file = os.path.join(backend_dir, "persisted_accounts.json")
+    if not os.path.exists(accounts_file):
+        return
+
+    try:
+        with open(accounts_file, "r", encoding="utf-8") as f:
+            accounts = json.load(f)
+
+        db = SessionLocal()
+        try:
+            changed = False
+            for acc in accounts:
+                em = (acc.get("email") or "").strip().lower()
+                pwd_hash = acc.get("password_hash")
+                if not em or not pwd_hash:
+                    continue
+                exists = db.query(User).filter(User.email == em).first()
+                if not exists:
+                    new_u = User(
+                        email=em,
+                        password_hash=pwd_hash,
+                        created_at=acc.get("created_at"),
+                    )
+                    db.add(new_u)
+                    changed = True
+            if changed:
+                db.commit()
+                print("[Seed] Restored user accounts from persisted_accounts.json")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[Seed] Error restoring persisted accounts: {e}")
+
+
 # Run initial table creation & migrations on import so test runners & TestClient have valid schema
 try:
     Base.metadata.create_all(bind=engine)
     if is_sqlite:
         _run_sqlite_migrations()
+    _seed_persisted_users()
 except Exception as _e:
     print(f"[CogniSphere] Schema initialization notice: {_e}")

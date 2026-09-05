@@ -74,6 +74,27 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
     db.commit()
     db.refresh(user)
 
+    # Persist account to persisted_accounts.json so it survives container reboots
+    try:
+        import json
+        import os
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        accounts_file = os.path.join(backend_dir, "persisted_accounts.json")
+        accounts = []
+        if os.path.exists(accounts_file):
+            with open(accounts_file, "r", encoding="utf-8") as f:
+                accounts = json.load(f)
+        if not any((a.get("email") or "").strip().lower() == email for a in accounts):
+            accounts.append({
+                "email": email,
+                "password_hash": user.password_hash,
+                "created_at": user.created_at,
+            })
+            with open(accounts_file, "w", encoding="utf-8") as f:
+                json.dump(accounts, f, indent=2)
+    except Exception as _e:
+        print(f"[Auth] Account JSON persistence notice: {_e}")
+
     # Safe backward-compatibility migration:
     # If unowned legacy memories or goals exist, claim them for the first user
     unowned_count = db.query(Memory).filter(Memory.user_id.is_(None)).count()
