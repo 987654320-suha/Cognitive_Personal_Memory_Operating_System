@@ -16,7 +16,7 @@ from app.services.goal_service import (
 )
 
 from app.models.user import User
-from app.auth.deps import get_optional_current_user
+from app.auth.deps import get_current_user
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
@@ -33,27 +33,25 @@ class GoalStatusUpdate(BaseModel):
 
 @router.get("/")
 def list_goals(
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_id = current_user.id if current_user else None
-    return get_all_goals(db, user_id=user_id)
+    return get_all_goals(db, user_id=current_user.id)
 
 
 @router.post("/")
 def add_goal(
     payload: GoalCreate,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_id = current_user.id if current_user else None
-    return create_goal(db, payload.name, payload.description, payload.parent_id, user_id=user_id)
+    return create_goal(db, payload.name, payload.description, payload.parent_id, user_id=current_user.id)
 
 
 @router.get("/{goal_id}/progress")
 def goal_progress(
     goal_id: int,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -70,11 +68,10 @@ def goal_progress(
 def set_goal_status(
     goal_id: int,
     payload: GoalStatusUpdate,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_id = current_user.id if current_user else None
-    result = update_goal_status(db, goal_id, payload.status, user_id=user_id)
+    result = update_goal_status(db, goal_id, payload.status, user_id=current_user.id)
     if not result:
         raise HTTPException(status_code=404, detail="Goal not found")
     return result
@@ -83,11 +80,10 @@ def set_goal_status(
 @router.delete("/{goal_id}")
 def remove_goal(
     goal_id: int,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_id = current_user.id if current_user else None
-    ok = delete_goal(db, goal_id, user_id=user_id)
+    ok = delete_goal(db, goal_id, user_id=current_user.id)
     if not ok:
         raise HTTPException(status_code=404, detail="Goal not found")
     return {"deleted": goal_id}

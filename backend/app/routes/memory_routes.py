@@ -17,7 +17,7 @@ from database.database import get_db, SessionLocal
 from app.services.memory_service import list_memories, get_memory, remove_memory
 from app.services.goal_service import get_goals_for_memory
 from app.models.user import User
-from app.auth.deps import get_optional_current_user
+from app.auth.deps import get_current_user
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 
@@ -40,19 +40,17 @@ class ImportanceUpdate(BaseModel):
 # ── Read endpoints ───────────────────────────────────────────────────────────
 
 @router.get("/")
-def get_memories(current_user: Optional[User] = Depends(get_optional_current_user)):
-    user_id = current_user.id if current_user else None
-    return list_memories(user_id=user_id)
+def get_memories(current_user: User = Depends(get_current_user)):
+    return list_memories(user_id=current_user.id)
 
 
 @router.get("/{memory_id}")
 def get_memory_detail(
     memory_id: int,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_id = current_user.id if current_user else None
-    mem = get_memory(memory_id, user_id=user_id)
+    mem = get_memory(memory_id, user_id=current_user.id)
     if not mem:
         raise HTTPException(status_code=404, detail="Memory not found")
     mem["goals"] = get_goals_for_memory(db, memory_id)
@@ -64,7 +62,7 @@ def get_memory_detail(
 @router.post("/")
 def create_memory(
     payload: MemoryCreate,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -152,7 +150,7 @@ def create_memory(
 def update_importance(
     memory_id: int,
     payload: ImportanceUpdate,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Adjust the importance score of an existing memory (for ablation experiments)."""
@@ -174,10 +172,9 @@ def update_importance(
 @router.delete("/{memory_id}")
 def delete_memory_endpoint(
     memory_id: int,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    user_id = current_user.id if current_user else None
-    ok = remove_memory(memory_id, user_id=user_id)
+    ok = remove_memory(memory_id, user_id=current_user.id)
     if not ok:
         raise HTTPException(status_code=404, detail="Memory not found")
 
